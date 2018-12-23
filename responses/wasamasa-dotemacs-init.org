@@ -1,0 +1,3267 @@
+* Preface
+
+This is an experiment to find out whether [[https://en.wikipedia.org/wiki/Literate_programming][literate configurations]] in a
+single monolithic [[http://orgmode.org/][org-mode]] file actually have a perceivable benefit.
+
+I'm using this configuration on a system running [[https://www.archlinux.org/][Arch Linux]] and Emacs
+25.3, that's why this configuration will be using the latest and
+greatest features and /not/ check for the system it's running on.
+While I do use =emacsclient= for most of my editing needs, I
+occasionally open =emacs= instances for things like IRC or testing
+purposes.
+
+To debug it, I've added a properties drawer to the following subtree
+that exports the code blocks to =.emacs= with =M-x org-babel-tangle=.
+
+Please don't use this Emacs configuration as is.  I suggest you to
+study it instead and inspect the many variables involved with the
+built-in help system by hitting =F1 v=.
+
+Here's a list of other literate Emacs configurations I've drawn
+inspiration from:
+
+- http://writequit.org/org/
+- http://doc.rix.si/org/fsem.html
+- https://postmomentum.ch/steckemacs.html
+- http://pages.sachachua.com/.emacs.d/Sacha.html
+- https://github.com/larstvei/dot-emacs/blob/master/init.org
+
+* Init
+:PROPERTIES:
+:header-args:emacs-lisp: :tangle ../.emacs
+:END:
+
+** User Interface
+
+Emacs comes with a set of pretty wonky defaults, since the UI is what
+we'll see first, we'll deal with it swiftly.  Part of its
+configuration can be set up in =~/.Xresources= and has the effect to
+be used before any frame is displayed for the price of less
+flexibility.  For experimentation, reload such configuration with
+=xrdb ~/.Xresources=.  Keep in mind that this hack might not do
+anything for you on a sufficiently fast machine that loads themes
+faster than you can notice.
+
+*** Superfluous UI elements
+
+I prefer not dealing with menu bars, tool bars and scroll bars and
+deactivate them in =~/.Xresources=:
+
+#+BEGIN_SRC conf
+Emacs.menuBar: off
+Emacs.toolBar: off
+Emacs.verticalScrollBars: off
+#+END_SRC
+
+*** Stop cursor blinking
+
+This used to give me nightmares, especially with the 24.4 addition
+that made the cursor blink ten times, then stops blinking until moving
+it again.
+
+#+BEGIN_SRC conf
+Emacs.cursorBlink: off
+#+END_SRC
+
+*** Less jarring background change
+
+The default background color chosen is white, however I'm using a dark
+theme.  Changing the background color after frame creation results in
+flashing, therefore I modify the background color to equal the one of
+the theme I'm going to load later.
+
+#+BEGIN_SRC conf
+Emacs.background: #002b36
+#+END_SRC
+
+The only other UI element left that stays visible throughout the
+entire init time would be the mode line.  It took me a bit of puzzling
+to figure out the right format for making it look the same as in my
+theme, but I eventually figured out from reading the last paragraph of
+the =(emacs) Table of Resources= info node that it does read in a list
+from a string by studying the sources of =faces.el= and =xfaces.c=.
+While this sounds kind of obvious, it means one can debug errors for
+more complex values like the one for the box by simply invoking
+~read-from-string~ on them.
+
+#+BEGIN_SRC conf
+Emacs.mode-line.attributeForeground: #93a1a1
+Emacs.mode-line.attributeBackground: #002b36
+Emacs.mode-line.attributeBox: (:line-width 1 :color "#073642")
+#+END_SRC
+
+*** Load theme
+
+My theme is a heavily customized [[http://ethanschoonover.com/solarized][Solarized]], originally taken from
+[[https://github.com/bbatsov/solarized-emacs/][Bozhidar Batsov]], later rewritten to support additional modes, the
+16-color palette in terminals and variant toggling.  It's stored in a
+separate file, to accomodate for that fact we need to customize a
+variable for user-made themes.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'custom-theme-load-path "~/code/elisp/punpun-theme")
+(add-to-list 'load-path "~/code/elisp/punpun-theme")
+(defun my-load-theme (&optional frame)
+  (with-selected-frame (or frame (selected-frame))
+    (load-theme 'punpun-light t)))
+(my-load-theme)
+(add-hook 'after-make-frame-functions 'my-load-theme)
+#+END_SRC
+
+Let's disable questions about theme loading while we're at it.
+
+#+BEGIN_SRC emacs-lisp
+(setq custom-safe-themes t)
+#+END_SRC
+
+Tooltips can be themed as well.
+
+#+BEGIN_SRC emacs-lisp
+(setq x-gtk-use-system-tooltips nil)
+#+END_SRC
+
+*** Improve the mode line
+
+The mode line is essentially a huge nested list of mode line items you
+can customize to achieve your prefered look.  The simplest way of
+getting a more useful mode line is using the [[https://github.com/Bruce-Connor/smart-mode-line][smart-mode-line]] package
+which comes with more useful and color-coded items and a few
+interesting features like shortening file names and minor modes.
+
+#+BEGIN_SRC emacs-lisp
+(setq sml/theme 'respectful
+      sml/mode-width 'full
+      sml/name-width '(0 . 20)
+      sml/replacer-regexp-list
+      '(("^~/org/" ":O:")
+        ("^~/\\.emacs\\.d/" ":ED:")))
+#+END_SRC
+
+However I prefer hiding minor modes by default.
+
+#+BEGIN_SRC emacs-lisp
+(setq rm-blacklist ".*")
+#+END_SRC
+
+*** Disable advertisements
+
+The first obvious thing one notices upon launching an uncustomized
+Emacs is a rather fancy splash screen that informs you about the usage
+and advertises for [[https://www.gnu.org/][the GNU project]].  I did eventually grow annoyed by
+it.
+
+#+BEGIN_SRC emacs-lisp
+(setq inhibit-startup-screen t)
+#+END_SRC
+
+A less obvious one is the advertisement message displayed after
+successful startup in the echo area.  The culprit behind it is
+~display-startup-echo-area-message~ and goes great lengths to make
+sure it's seen by first checking whether the
+~inhibit-startup-echo-area-message~ has been set by the =customize=
+system to your user name, then scanning your init file with a regular
+expression for it.  Considering I dislike using the =customize=
+system, don't have a conventional init file and find this pretty
+silly, I disable this behaviour entirely by redefining the function to
+display a bit more encouraging message instead.
+
+#+BEGIN_SRC emacs-lisp
+(defun display-startup-echo-area-message ()
+  (message "Let the hacking begin!"))
+#+END_SRC emacs-lisp
+
+*** Fix the display of Emoji
+
+After starting to use Emacs for IRC I've discovered that unlike
+everything else on my system using the excellent =fontconfig= software
+it fails displaying Emoji such as the infamous PILE OF POO (💩) out of
+the box.  I'm afraid I will never find out the exact details of its
+font fallback mechanism which might be for the better.  To fix this
+for both Emacs and Emacsclient for all font sizes I had to set up a
+fontset consisting of my favourite monospaced and a suitable fallback
+font in both X resources and my init file.
+
+#+BEGIN_SRC conf
+Emacs.Fontset-0: -*-DejaVu Sans Mono-*-*-*-*-14-*-*-*-*-*-fontset-dejavu14, symbol:-*-DejaVu Sans-*-*-*-*-14-*-*-*-*-*-*, symbol:-*-Symbola-*-*-*-*-14-*-*-*-*-*-*
+Emacs.font: fontset-dejavu14
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp
+(setq default-frame-alist '((font . "DejaVu Sans Mono-10.5")))
+(defun my-fix-emojis (&optional frame)
+  (set-fontset-font "fontset-default" nil "Symbola" frame 'append))
+(my-fix-emojis)
+(add-hook 'after-make-frame-functions 'my-fix-emojis)
+#+END_SRC
+
+*** Adjust keystroke echo timeout
+
+This is a built-in feature I didn't expect to be useful.  If you type
+part of keybind, Emacs will display this part in the echo area after a
+timeout.  One second is a bit too long though for my taste.
+
+#+BEGIN_SRC emacs-lisp
+(setq echo-keystrokes 0.5)
+#+END_SRC
+
+** Emacs annoyances
+
+Every file stating "This file is part of GNU Emacs." is more often
+than not a source of code that may be crufty, nausea-inducing or just
+having weird defaults that I need to correct.
+
+*** Memory Management
+
+Let's allow more than 800 KiB cache before starting garbage collection.
+
+#+BEGIN_SRC emacs-lisp
+(setq gc-cons-threshold 50000000)
+#+END_SRC
+
+*** Fix ~line-number-mode~
+
+~line-number-mode~ displays the current line number in the mode line,
+however it stops doing that in buffers when encountering at least one
+overly long line and displays two question marks instead.  This is
+pretty unhelpful, the only workaround I've been able to find was to
+increase ~line-number-display-width~ to a substantially higher value.
+
+#+BEGIN_SRC emacs-lisp
+(setq line-number-display-limit-width 10000)
+#+END_SRC
+
+See also [[http://emacs.stackexchange.com/questions/3824/what-piece-of-code-in-emacs-makes-line-number-mode-print-as-line-number-i][this question]] on [[http://emacs.stackexchange.com/][the Emacs SE]].
+
+*** GnuTLS
+
+I have no idea why, but apparently you get nasty warnings by [[http://gnutls.org/][the
+GnuTLS library]] when using https with the default settings.  Increasing
+the minimum prime bits size to something safer alleviates that.
+
+#+BEGIN_SRC emacs-lisp
+(setq gnutls-min-prime-bits 4096)
+#+END_SRC
+
+*** Scratch
+
+Since the =*scratch*= buffer is pretty hard-wired into Emacs (see
+=buffer.c=), the least we could do is getting rid of its initial
+message.  No, it's using its own mode instead of ~emacs-lisp-mode~ for
+the questionable benefit of having a function inserting evaluation
+values after a newline.
+
+#+BEGIN_SRC emacs-lisp
+(setq initial-scratch-message "")
+(setq initial-major-mode 'emacs-lisp-mode)
+#+END_SRC
+
+*** Initial buffer
+
+However I don't want to see the scratch buffer, let's display our
+notes file instead as daily reminder what's left to do.
+
+#+BEGIN_SRC emacs-lisp
+(setq remember-notes-initial-major-mode 'org-mode)
+(setq initial-buffer-choice 'remember-notes)
+#+END_SRC
+
+There is a bit of mismatch between the keybindings of
+~remember-notes-mode~ and ~org-mode~, so let's fix that:
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'remember
+  (define-key remember-notes-mode-map (kbd "C-c C-c") nil))
+#+END_SRC
+
+*** Find C functions
+
+There's a fair number of Emacs functions that aren't written in Emacs
+Lisp (see [[https://www.openhub.net/p/emacs][these statistics]]).  To be able to locate them, it's
+necessary to grab a tarball of the sources and put it into a specific
+location.  To recreate these, grab the latest tarball from
+http://ftp.gnu.org/gnu/emacs/, extract its contents and put the =src=
+directory into =~/.emacs.d=, then customize the following variable.
+
+#+BEGIN_SRC emacs-lisp
+(setq find-function-C-source-directory "~/.emacs.d/src")
+#+END_SRC
+
+*** Shorten Yes/No prompts
+
+Per default you're required to type out a full "yes" or "no" whenever
+the function ~yes-or-no-p~ is invoked, let's substitute its function
+definition to allow a "y" or "n" without even requiring confirmation.
+
+#+BEGIN_SRC emacs-lisp
+(fset 'yes-or-no-p 'y-or-n-p)
+#+END_SRC
+
+*** Open URLs with =xdg-open=
+
+I've set up =xdg-open= to use my prefered browser for HTTP and HTTPS
+URLs.  Emacs claims to detect whether my system can use it, however
+this fails because I don't have a popular DE up and running (I kid you
+not, look at ~browse-url-can-use-xdg~ and how it replicates that part
+from the =xdg-open= script).
+
+#+BEGIN_SRC emacs-lisp
+(setq browse-url-browser-function 'browse-url-xdg-open)
+#+END_SRC
+
+*** Zero out default splitting tresholds
+
+I have no idea how this actually works, but it seems to make Emacs
+prefer doing a horizontal split over a vertical split on wide screens.
+
+#+BEGIN_SRC emacs-lisp
+(setq split-height-threshold 0
+      split-width-threshold 0)
+#+END_SRC
+
+*** Unique buffer names
+
+This shouldn't be necessary since I'm already using =smart-mode-line=,
+however it's better to use a less confusing style than the default
+that puts brackets around the buffer names shared in Emacs.
+
+#+BEGIN_SRC emacs-lisp
+(setq uniquify-buffer-name-style 'forward)
+#+END_SRC
+
+*** Inhibit =custom= littering my init file
+
+For whatever reason the customization system will write into your init
+file which is especially annoying if you have it in version control
+like I do.  It's reasonably simple to deactivate this behaviour by
+customizing customize into using a dedicated file, however you'll need
+to both delete the lines it wrote and load it afterwards to make it
+aware it has already been loaded successfully.
+
+#+BEGIN_SRC emacs-lisp
+(setq custom-file "~/.emacs.d/etc/custom.el")
+(load custom-file)
+#+END_SRC
+
+*** Display .nfo files with appropriate code page
+
+Since Emacs auto-detection of encodings is quite good, but not
+omniscient, we'll give it a nudge to display these files the way
+they're supposed to be.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'auto-coding-alist '("\\.nfo\\'" . ibm437))
+#+END_SRC
+
+*** Fix scrolling
+
+Half-page scrolling is great at reducing bandwidth, but is very
+jarring when done automatically.  The following settings will make
+Emacs scroll line by line, without scrolloff and try to keep point at
+the same visual place when scrolling by page.
+
+I used to have scrolloff enabled here with the ~scroll-margin~
+variable, but it introduced pretty nasty scrolling behaviour for large
+files, so I no longer do.
+
+#+BEGIN_SRC emacs-lisp
+(setq scroll-conservatively 10000
+      scroll-preserve-screen-position t)
+#+END_SRC
+
+*** Indent with spaces by default
+
+Most programming languages I work with prefer spaces over tabs.
+
+Note how this is not a mode, but a buffer-local variable.
+
+#+BEGIN_SRC emacs-lisp
+(setq-default indent-tabs-mode nil)
+#+END_SRC
+
+*** Manage Backup and autosave files
+
+Backup files are created on save in the same directory as the file and
+end in =~=.  They can be numbered which makes most sense combined with
+a different save location and automatic pruning.
+
+#+BEGIN_SRC emacs-lisp
+(setq backup-directory-alist '((".*" . "~/.emacs.d/backup")))
+(setq version-control t)
+(setq delete-old-versions t)
+#+END_SRC
+
+Autosave files are created between saves after a sufficient timeout in
+the current directory for crash detection, they begin and end with
+=#=.  Let's change their save location as well.
+
+#+BEGIN_SRC emacs-lisp
+(setq auto-save-list-file-prefix "~/.emacs.d/autosave/")
+(setq auto-save-file-name-transforms '((".*" "~/.emacs.d/autosave/" t)))
+#+END_SRC
+
+Keep in mind that there is nothing you can do regarding lock files
+except deactivating them completely (which robs you of the ability to
+detect session clashes).  They are symlinks that are created upon
+modification of the file in question in its directory and are prefixed
+by =.#=.  Saving the file makes them disappear (unlike autosave
+files).
+
+*** Allow for multiple Emacs daemons
+
+Although I'm pretty sure I won't make use of this, I prefer using
+local TCP connections over socket files.  Another benefit of this
+setting is that it would allow me to make use of =emacsclient=
+to access a remote Emacs daemon.
+
+#+BEGIN_SRC emacs-lisp
+(setq server-use-tcp t)
+#+END_SRC
+
+*** Stop pasting at the mouse click point
+
+Middle-clicking is nice to paste, however it should not adjust point
+and paste at the then adjusted point.
+
+#+BEGIN_SRC emacs-lisp
+(setq mouse-yank-at-point t)
+#+END_SRC
+
+*** Display buffer name in frame titles
+
+The default is to display the invocation name and host.  Changing that
+to use a different separator and the buffer name is trivial, however
+there's still an annoying space in front when using =M-:=.  Regular
+expressions to the rescue!
+
+#+BEGIN_SRC emacs-lisp
+(setq frame-title-format
+      '("" invocation-name ": " (:eval (replace-regexp-in-string
+                                        "^ +" "" (buffer-name)))))
+#+END_SRC
+
+*** Disable parentheses blinking on entering a match
+
+This will be done by a different package anyways, therefore we don't
+need it.
+
+#+BEGIN_SRC emacs-lisp
+(setq blink-matching-paren nil)
+#+END_SRC
+
+*** Display fringe indicators and fix line movement in ~visual-line-mode~
+
+It's pretty nice to have the option to display words in a buffer as if
+they were hardwrapped around the word boundaries, however it's
+confusing to not have any fringe indicators.
+
+#+BEGIN_SRC emacs-lisp
+(setq visual-line-fringe-indicators '(left-curly-arrow right-curly-arrow))
+#+END_SRC
+
+I don't like the remappings done to operate on visual lines (for
+=C-a=, =C-e= and =C-k=), so I'm just undefining them.
+
+#+BEGIN_SRC emacs-lisp
+(setcdr visual-line-mode-map nil)
+#+END_SRC
+
+*** Enable every deactivated command
+
+The rationale for this default seems to be to avoid confusion for
+beginners, I personally find it kind of annoying that Emacs of all
+editors does this kind of thing and doesn't offer a straightforward
+option to disable it even.
+
+#+BEGIN_SRC emacs-lisp
+(setq disabled-command-function nil)
+#+END_SRC
+
+*** Save clipboard data of other programs in the kill ring when possible
+
+I hope the necessity of this will be gone once Wayland is a viable
+option for me.
+
+#+BEGIN_SRC emacs-lisp
+(setq save-interprogram-paste-before-kill t)
+#+END_SRC
+
+*** Make recentering behave more similiar to other programs
+
+Try it out yourself by hitting =C-l=, it will start with the top
+instead of the middle row.
+
+#+BEGIN_SRC emacs-lisp
+(setq recenter-positions '(top middle bottom))
+#+END_SRC
+
+*** Make =kill -USR1= do something useful
+
+A lesser known fact is that sending the =USR2= signal to an Emacs
+process makes it proceed as soon as possible to a debug window.
+=USR1= is ignored however, so let's bind it to an alternative
+desirable function that can be used on an Emacs instance that has
+locked up.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-quit-emacs-unconditionally ()
+  (interactive)
+  (my-quit-emacs '(4)))
+
+(define-key special-event-map (kbd "<sigusr1>") 'my-quit-emacs-unconditionally)
+#+END_SRC
+
+*** Don't use dialog boxes
+
+Clicking on an install button for instance makes Emacs spawn dialog
+boxes from that point on.
+
+#+BEGIN_SRC emacs-lisp
+(setq use-dialog-box nil)
+#+END_SRC
+
+** Packages bundled with Emacs
+
+This includes stuff that is bundled with Emacs and can be obtained
+from a more recent source as well, such as =org-mode=.  I'm mostly
+refering to smaller packages though.
+
+*** =recentf=
+
+~recentf-mode~ allows you to access the list of recent files which can
+be used by =ido= and =helm=.  Let's save its file somewhere else and
+change the size of its history while we're at it.
+
+#+BEGIN_SRC emacs-lisp
+(setq recentf-save-file "~/.emacs.d/etc/recentf"
+      recentf-max-saved-items 50)
+#+END_SRC
+
+*** =savehist=
+
+The history of prompts like =M-:= can be saved, but let's change its
+save file and history length first.
+
+#+BEGIN_SRC emacs-lisp
+(setq savehist-file "~/.emacs.d/etc/savehist"
+      history-length 150)
+#+END_SRC
+
+*** =save-place=
+
+I didn't expect to like this functionality, but it's pretty neat to
+start from the last place you were in a file the next time you visit
+it.  Asides from putting the save file somewhere else, I have to
+enable this behaviour for every buffer since it's buffer-local.
+
+#+BEGIN_SRC emacs-lisp
+(setq-default save-place t)
+(setq save-place-file "~/.emacs.d/etc/saveplace")
+#+END_SRC
+
+*** =windmove=
+
+The =windmove= provides useful commands for moving window focus by
+direction, I prefer having wraparound instead of getting errors
+though.
+
+#+BEGIN_SRC emacs-lisp
+(setq windmove-wrap-around t)
+#+END_SRC
+
+*** =bookmark=
+
+Yet another file that I prefer being saved somewhere else.
+
+#+BEGIN_SRC emacs-lisp
+(setq bookmark-default-file "~/.emacs.d/etc/bookmarks")
+#+END_SRC
+
+*** =ediff=
+
+Anything else than =emacsclient= spawning frames is pretty much
+useless for me with =i3=.  I assume the vertical split is not done
+because I've customized horizontal splits to be prefered.  The name of
+the alternative splitting function is not a mistake, what Emacs calls
+"horizontal" in =window.el= is called vertical in anything else.
+
+#+BEGIN_SRC emacs-lisp
+(setq ediff-window-setup-function 'ediff-setup-windows-plain
+      ediff-split-window-function 'split-window-horizontally)
+#+END_SRC
+
+*** =debug=
+
+The debugger does display only the position of point when evaluating
+buffers, the following rendition of =debug-setup-buffer= displays a
+line number as well.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'debug
+  (defun debugger-setup-buffer (debugger-args)
+    "Initialize the `*Backtrace*' buffer for entry to the debugger.
+That buffer should be current already."
+    (setq buffer-read-only nil)
+    (erase-buffer)
+    (set-buffer-multibyte t)		;Why was it nil ?  -stef
+    (setq buffer-undo-list t)
+    (let ((standard-output (current-buffer))
+          (print-escape-newlines t)
+          (print-level 8)
+          (print-length 50))
+      (backtrace))
+    (goto-char (point-min))
+    (delete-region (point)
+                   (progn
+                     (search-forward "\n  debug(")
+                     (forward-line (if (eq (car debugger-args) 'debug)
+                                       2	; Remove implement-debug-on-entry frame.
+                                     1))
+                     (point)))
+    (insert "Debugger entered")
+    ;; lambda is for debug-on-call when a function call is next.
+    ;; debug is for debug-on-entry function called.
+    (pcase (car debugger-args)
+      ((or `lambda `debug)
+       (insert "--entering a function:\n"))
+      ;; Exiting a function.
+      (`exit
+       (insert "--returning value: ")
+       (setq debugger-value (nth 1 debugger-args))
+       (prin1 debugger-value (current-buffer))
+       (insert ?\n)
+       (delete-char 1)
+       (insert ? )
+       (beginning-of-line))
+      ;; Debugger entered for an error.
+      (`error
+       (insert "--Lisp error: ")
+       (prin1 (nth 1 debugger-args) (current-buffer))
+       (insert ?\n))
+      ;; debug-on-call, when the next thing is an eval.
+      (`t
+       (insert "--beginning evaluation of function call form:\n"))
+      ;; User calls debug directly.
+      (_
+       (insert ": ")
+       (prin1 (if (eq (car debugger-args) 'nil)
+                  (cdr debugger-args) debugger-args)
+              (current-buffer))
+       (insert ?\n)))
+    ;; After any frame that uses eval-buffer,
+    ;; insert a line that states the buffer position it's reading at.
+    (save-excursion
+      (let ((tem eval-buffer-list))
+        (while (and tem
+                    (re-search-forward "^  eval-\\(buffer\\|region\\)(" nil t))
+          (beginning-of-line)
+          (insert (format "Error at line %d in %s: "
+                          (with-current-buffer (car tem)
+                            (line-number-at-pos (point)))
+                          (with-current-buffer (car tem)
+                            (buffer-name))))
+          (pop tem))))
+    (debugger-make-xrefs)))
+#+END_SRC
+
+*** =dired=
+
+For the few times I'm using [[http://pu.inf.uni-tuebingen.de/users/sperber/software/dired/][Dired]], I prefer it not spawning an endless
+amount of buffers.  In fact, I'd prefer it using one buffer unless
+another one is explicitly created, but you can't have everything.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'dired
+  (define-key dired-mode-map (kbd "RET") 'dired-find-alternate-file))
+#+END_SRC
+
+*** =tramp=
+
+If [[https://www.gnu.org/software/tramp/][TRAMP]] makes backup files, they should better be kept locally than
+remote.
+
+#+BEGIN_SRC emacs-lisp
+(setq tramp-backup-directory-alist backup-directory-alist)
+#+END_SRC
+
+As usual I want to fix up the file it's storing its history in.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'tramp-cache
+  (setq tramp-persistency-file-name "~/.emacs.d/etc/tramp"))
+#+END_SRC
+
+But to be honest, I prefer it not automatically interfering with
+everything.  Unloading it entirely causes packages to break that
+assume it's enabled, therefore I'm going for its main entry point and
+dike it out.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-disable-tramp-file-handlers ()
+  (setq file-name-handler-alist
+        (--remove (string-match-p "^tramp" (symbol-name (cdr it)))
+                  file-name-handler-alist)))
+#+END_SRC
+
+*** Calendar
+
+General functionality for calendars inside Emacs, split up in a lot of
+files.  Customizing it will affect other packages, including [[https://github.com/kiwanami/emacs-calfw][calfw]].
+The following customizations make it appear german (since I happen to
+live in Germany, d'uh).
+
+#+BEGIN_SRC emacs-lisp
+(setq calendar-week-start-day 1
+      calendar-day-name-array ["Sonntag" "Montag" "Dienstag" "Mittwoch"
+                               "Donnerstag" "Freitag" "Samstag"]
+      calendar-month-name-array ["Januar" "Februar" "März" "April" "Mai"
+                                 "Juni" "Juli" "August" "September"
+                                 "Oktober" "November" "Dezember"])
+(setq solar-n-hemi-seasons
+      '("Frühlingsanfang" "Sommeranfang" "Herbstanfang" "Winteranfang"))
+
+(setq holiday-general-holidays
+      '((holiday-fixed 1 1 "Neujahr")
+        (holiday-fixed 5 1 "1. Mai")
+        (holiday-fixed 10 3 "Tag der Deutschen Einheit")))
+
+(setq holiday-christian-holidays
+      '((holiday-float 12 0 -4 "1. Advent" 24)
+        (holiday-float 12 0 -3 "2. Advent" 24)
+        (holiday-float 12 0 -2 "3. Advent" 24)
+        (holiday-float 12 0 -1 "4. Advent" 24)
+        (holiday-fixed 12 24 "Weihnachten")
+        (holiday-fixed 12 25 "1. Weihnachtstag")
+        (holiday-fixed 12 26 "2. Weihnachtstag")
+        (holiday-fixed 1 6 "Heilige Drei Könige")
+        (holiday-easter-etc -48 "Rosenmontag")
+        (holiday-easter-etc -3 "Gründonnerstag")
+        (holiday-easter-etc -2 "Karfreitag")
+        (holiday-easter-etc 0 "Ostersonntag")
+        (holiday-easter-etc +1 "Ostermontag")
+        (holiday-easter-etc +39 "Christi Himmelfahrt")
+        (holiday-easter-etc +49 "Pfingstsonntag")
+        (holiday-easter-etc +50 "Pfingstmontag")
+        (holiday-easter-etc +60 "Fronleichnam")
+        (holiday-fixed 8 15 "Mariae Himmelfahrt")
+        (holiday-fixed 11 1 "Allerheiligen")
+        (holiday-float 11 0 1 "Totensonntag" 20)))
+
+(setq holiday-oriental-holidays nil
+      holiday-bahai-holidays nil
+      holiday-islamic-holidays nil
+      holiday-hebrew-holidays nil)
+#+END_SRC
+
+*** =org-mode=
+
+First some UI and editing tweaks.
+
+#+BEGIN_SRC emacs-lisp
+(setq org-catch-invisible-edits 'error
+      org-startup-indented t
+      org-cycle-include-plain-lists 'integrate
+      org-ellipsis " […]"
+      org-return-follows-link t
+      org-M-RET-may-split-line nil
+      org-src-fontify-natively t
+      org-src-preserve-indentation t
+      org-enforce-todo-dependencies t
+      org-enforce-todo-checkbox-dependencies t
+      org-link-frame-setup '((file . find-file)))
+#+END_SRC
+
+I like taking notes and sometimes even take a look at the agenda.
+
+#+BEGIN_SRC emacs-lisp
+(setq org-directory "~/org/"
+      org-agenda-files (list org-directory)
+      org-default-notes-file "~/org/inbox.org"
+      org-capture-templates
+      '(("n" "Note" entry (file+headline "~/org/inbox.org" "Inbox")
+         "* TODO %<%Y-%m-%d %H:%M:%S>\n\n%?" :empty-lines 1)
+        ("p" "PW" entry (file+headline "~/org/pw.org" "PW")
+         "* TODO %<%Y-%m-%d %H:%M:%S>\n\n%?" :empty-lines 1)
+        ("w" "Work" entry (file+datetree "~/org/work.org")
+         "* %<%H:%M>\n\n%?" :empty-lines 1)
+        ("j" "Journal" entry (file+datetree "~/org/journal.org")
+         "* %<%H:%M>\n\n%?" :empty-lines 1)))
+#+END_SRC
+
+To keep track how much I wrote when taking a note, I enable a word
+counting minor mode.  Upstream didn't autoload its entry point for
+Reasons™ which is why I do that myself.
+
+#+BEGIN_SRC emacs-lisp
+(autoload 'wc-mode "wc-mode" "Enable wc-mode" t)
+(add-hook 'org-capture-mode-hook 'wc-mode)
+#+END_SRC
+
+The export functionality is very handy, but some of the stuff I like
+using is deactivated by default :<
+
+#+BEGIN_SRC emacs-lisp
+(setq org-export-backends '(ascii beamer html latex md))
+#+END_SRC
+
+It's a bit tricky to color code listings and permit more flexible tables:
+
+#+BEGIN_SRC emacs-lisp
+(setq org-latex-listings 'minted
+      org-latex-packages-alist '(("" "tabu") ("" "minted"))
+      org-latex-pdf-process
+      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
+        "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
+#+END_SRC
+
+Org's exporter has a rather weird way of figuring out how to open an
+exported file, so we'll give it a nudge.  Note that since Emacs
+handles PDFs with ~docview~ *and* its mailcap implementation prefers
+Lisp viewers over system viewers, it ends up using ~docview~ in both
+cases, so we'll just tell it not to by placing the PDF entry at the
+top while still defining that we'd rather want to use ~xdg-open~
+instead of that piece of rubbish.
+
+#+BEGIN_SRC emacs-lisp
+(setq org-file-apps '(("pdf" . system)
+                      (auto-mode . emacs)
+                      (system . "xdg-open %s")
+                      (t . system)))
+#+END_SRC
+
+*** =comint=
+
+Here comes another particularly interesting Emacs package.  It allows
+one to define major modes interacting with a REPL-style process.  In
+other words, it gives you all kinds of shell and interpreter
+interaction with common keybindings, be it for SQL, your favourite
+programming language or your shell.  Even Emacs itself can be used,
+try out =M-x ielm=.
+
+However there's a couple things that could be improved.  One of them
+is the fact that by default such buffers are editable.  The prompt can
+be customized easily to be read-only, the remaining output needs a bit
+more work.
+
+#+BEGIN_SRC emacs-lisp
+(setq comint-prompt-read-only t)
+
+(defun my-comint-preoutput-read-only (text)
+  (propertize text 'read-only t))
+
+(add-hook 'comint-preoutput-filter-functions
+          'my-comint-preoutput-read-only)
+#+END_SRC
+
+While it would be better to patch ~comint-previous-input~ (which is
+used by ~comint-next-input~ with a negative argument, so don't worry)
+to take a customizable value that determines whether to wrap around or
+not, I've hacked it into just wrapping around for simplicity's sake.
+
+#+BEGIN_SRC emacs-lisp
+(defun comint-previous-input (arg)
+  "Cycle backwards with wrap-around through input history, saving input."
+  (interactive "*p")
+  (unless (and (eq comint-input-ring-index nil)
+               (< arg 0))
+    (if (and (eq comint-input-ring-index 0)
+             (< arg 0)
+             comint-stored-incomplete-input)
+        (comint-restore-input)
+      (unless (and (eq comint-input-ring-index
+                       (- (ring-length comint-input-ring) 1))
+               (> arg 0))
+        (comint-previous-matching-input "." arg)))))
+#+END_SRC
+
+It's trivial to clear the entire =comint= buffer by temporarily
+binding ~comint-buffer-maximum-size~ to zero and calling
+~comint-truncate-buffer~, however that's not what I really want.
+Usually it's just the output of the last expression that's been
+faulty and needs to be cleared by replacing it with a comment.  The
+idea itself is taken from [[https://github.com/clojure-emacs/cider/blob/cb3509eb54d3c3369681d73f3218a1493b977e99/cider-repl.el#L640-L655][CIDER]].
+
+#+BEGIN_SRC emacs-lisp
+(defun my-comint-last-output-beg ()
+  (save-excursion
+    (comint-goto-process-mark)
+    (while (not (or (eq (get-char-property (point) 'field) 'boundary)
+                    (= (point) (point-min))))
+      (goto-char (previous-char-property-change (point) (point-min))))
+    (if (= (point) (point-min))
+        (point)
+      (1+ (point)))))
+
+(defun my-comint-last-output-end ()
+  (save-excursion
+    (comint-goto-process-mark)
+    (while (not (or (eq (get-char-property (point) 'font-lock-face)
+                        'comint-highlight-prompt)
+                    (= (point) (point-min))))
+      (goto-char (previous-char-property-change (point) (point-min))))
+    (let ((overlay (car (overlays-at (point)))))
+      (when (and overlay (eq (overlay-get overlay 'font-lock-face)
+                             'comint-highlight-prompt))
+        (goto-char (overlay-start overlay))))
+    (1- (point))))
+
+(defun my-comint-clear-last-output ()
+  (interactive)
+  (let ((start (my-comint-last-output-beg))
+        (end (my-comint-last-output-end)))
+    (let ((inhibit-read-only t))
+      (delete-region start end)
+      (save-excursion
+        (goto-char start)
+        (insert (propertize "output cleared"
+                            'font-lock-face 'font-lock-comment-face))))))
+#+END_SRC
+
+Killed =comint= processes tend to leave an useless buffer around.
+Let's kill it after noticing such an event with a process sentinel.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-shell-kill-buffer-sentinel (process event)
+  (when (and (memq (process-status process) '(exit signal))
+             (buffer-live-p (process-buffer process)))
+    (kill-buffer)))
+
+(defun my-kill-process-buffer-on-exit ()
+  (set-process-sentinel (get-buffer-process (current-buffer))
+                        #'my-shell-kill-buffer-sentinel))
+
+(dolist (hook '(ielm-mode-hook term-exec-hook comint-exec-hook))
+  (add-hook hook 'my-kill-process-buffer-on-exit))
+#+END_SRC
+
+Recentering feels a bit unintuitive since it goes by the middle
+first.  I only need top and bottom commands, for that I'll define my
+own command and bind it later.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-recenter-top-bottom ()
+  (interactive)
+  (goto-char (point-max))
+  (let ((recenter-positions '(top bottom)))
+    (recenter-top-bottom)))
+#+END_SRC
+
+Another thing annoying me in comint buffers is that when text is
+read-only, both cursor movement and appending to kill ring still
+happen.  This is less useful since if you keep holding the keys to
+delete words, you end up traversing the entire buffer instead of
+stopping at the read-only boundaries and pollute the kill ring.  To
+remedy that I'll write my own word killing commands in the typical
+Emacs user fashion, however I'll not advise the built-ins since who
+knows what might possibly be relying on this default behaviour.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-kill-word (arg)
+  (interactive "p")
+  (unless buffer-read-only
+    (let ((beg (point))
+          (end (save-excursion (forward-word arg) (point)))
+          (point (save-excursion (goto-char
+                                  (if (> arg 0)
+                                      (next-single-char-property-change
+                                       (point) 'read-only)
+                                    (previous-single-char-property-change
+                                     (point) 'read-only)))
+                                 (point))))
+      (unless (get-char-property (point) 'read-only)
+        (if (if (> arg 0) (< point end) (> point end))
+            (kill-region beg point)
+          (kill-region beg end))))))
+
+(defun my-backward-kill-word (arg)
+  (interactive "p")
+  (my-kill-word (- arg)))
+#+END_SRC
+
+The new functionality introduced has to be bound to keys for
+convenient use.  Note the remapping of commands.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'comint
+  (define-key comint-mode-map (kbd "<remap> <kill-word>") 'my-kill-word)
+  (define-key comint-mode-map (kbd "<remap> <backward-kill-word>") 'my-backward-kill-word)
+  (define-key comint-mode-map (kbd "C-S-l") 'my-comint-clear-last-output)
+  (define-key comint-mode-map (kbd "C-l") 'my-recenter-top-bottom))
+#+END_SRC
+
+*** =shell=
+
+For unknown reasons I get my input echoed back to me.  In other words,
+sending =ls= to =shell= echoes my input twice, then the output.
+=comint= has a setting that can filter these echoes.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-shell-turn-echo-off ()
+  (setq comint-process-echoes t))
+
+(add-hook 'shell-mode-hook 'my-shell-turn-echo-off)
+#+END_SRC
+
+*** =eshell=
+
+I want =C-d= to not unconditionally delete the character, but to quit
+on an empty prompt, too.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-eshell-quit-or-delete-char (arg)
+  (interactive "p")
+  (if (and (eolp) (looking-back eshell-prompt-regexp))
+      (eshell-life-is-too-much) ;; http://emacshorrors.com/post/life-is-too-much
+    (delete-forward-char arg)))
+
+(defun my-eshell-setup ()
+  (define-key eshell-mode-map (kbd "C-d") 'my-eshell-quit-or-delete-char))
+
+(add-hook 'eshell-mode-hook 'my-eshell-setup)
+#+END_SRC
+
+For silly reasons I like having a rainbow-colored prompt.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'eshell-load-hook 'nyan-prompt-enable)
+#+END_SRC
+
+*** CC-Mode
+
+In their ingenuity the Emacs developers decided to make the GNU style
+the default style for C code written with it.  While this is a
+decision that helps making contribution to GNU projects still adhering
+to this style (including Emacs itself) a fair bit easier, I'd hate
+using it for anything else.  I don't know my exact preferences yet,
+but for the time being the "user" style is good enough and can still
+be customized into something more sophisticated.
+
+#+BEGIN_SRC emacs-lisp
+(setq c-default-style '((java-mode . "java")
+                        (awk-mode . "awk")
+                        (c-mode . "user")))
+#+END_SRC
+
+*** =eldoc-mode=
+
+The default idle delay is way too long.  Also, avoid displaying overly
+long function signatures.
+
+#+BEGIN_SRC emacs-lisp
+(setq eldoc-idle-delay 0.1
+      eldoc-echo-area-use-multiline-p nil)
+#+END_SRC
+
+*** Emacs Lisp
+
+[[https://github.com/cask/cask][Cask]] files are just Emacs Lisp.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'auto-mode-alist '("Cask\\'" . emacs-lisp-mode))
+#+END_SRC
+
+Additionally to the =F1= keybindings I'd like to have two extra
+keybinds for evaluation and a REPL.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-eval-region-or-buffer ()
+  (interactive)
+  (if (region-active-p)
+      (eval-region (region-beginning) (region-end))
+    (eval-buffer)))
+
+(with-eval-after-load 'lisp-mode
+  (define-key emacs-lisp-mode-map (kbd "C-c C-c") 'my-eval-region-or-buffer)
+  (define-key emacs-lisp-mode-map (kbd "C-c C-z") 'ielm))
+#+END_SRC
+
+=eldoc= is a nice helper to avoid looking up function signatures in
+function documentation.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'emacs-lisp-mode-hook 'turn-on-eldoc-mode)
+(add-hook 'ielm-mode-hook 'turn-on-eldoc-mode)
+#+END_SRC
+
+*** Scheme
+
+I like [[http://call-cc.org/][CHICKEN]].
+
+#+BEGIN_SRC emacs-lisp
+(setq scheme-program-name "csi")
+(add-to-list 'interpreter-mode-alist '("chicken-scheme" . scheme-mode))
+#+END_SRC
+
+To avoid typing =M-x run-scheme=, I define another useful keybinding.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'scheme
+  (define-key scheme-mode-map (kbd "C-c C-z") 'run-scheme))
+#+END_SRC
+
+The binding is replaced though after launching the REPL, I should
+eventually fix this.  Perhaps with my very own major mode.
+
+Indentation hints fortunately seem to work for other languages than
+Emacs Lisp.
+
+#+BEGIN_SRC emacs-lisp
+(put 'match 'scheme-indent-function 1)
+(put 'match-let 'scheme-indent-function 1)
+(put 'match-let* 'scheme-indent-function 1)
+(put 'when 'scheme-indent-function 1)
+(put 'and-let* 'scheme-indent-function 1)
+(put 'if-let 'scheme-indent-function 1)
+(put 'let-location 'scheme-indent-function 1)
+(put 'select 'scheme-indent-function 1)
+(put 'bitmatch 'scheme-indent-function 1)
+(put 'bitpacket 'scheme-indent-function 1)
+(put 'with-transaction 'scheme-indent-function 1)
+(put 'foreign-lambda* 'scheme-indent-function 2)
+#+END_SRC
+
+There's a few schemey file formats I'd like to automatically
+recognize:
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'auto-mode-alist '("\\.sxml\\'" . scheme-mode))
+(add-to-list 'auto-mode-alist '("\\.scss\\'" . scheme-mode))
+(add-to-list 'auto-mode-alist '("\\.setup\\'" . scheme-mode))
+(add-to-list 'auto-mode-alist '("\\.meta\\'" . scheme-mode))
+(add-to-list 'auto-mode-alist '("\\.release-info\\'" . scheme-mode))
+#+END_SRC
+
+*** Common Lisp
+
+I like [[http://www.sbcl.org/][SBCL]].
+
+#+BEGIN_SRC emacs-lisp
+(setq inferior-lisp-program "/usr/bin/sbcl")
+#+END_SRC
+
+*** NXML
+
+Let's automatically complete closing tags.
+
+#+BEGIN_SRC emacs-lisp
+(setq nxml-slash-auto-complete-flag t)
+#+END_SRC
+
+*** CSS
+
+Indentation could be a bit more narrow.
+
+#+BEGIN_SRC emacs-lisp
+(setq css-indent-offset 2)
+#+END_SRC
+
+*** Python
+
+Emacs is not aware of version-dependent shebangs.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'interpreter-mode-alist '("python2" . python-mode))
+(add-to-list 'interpreter-mode-alist '("python3" . python-mode))
+#+END_SRC
+
+For some reason guessing the indentation offset is on by default
+although nearly all Python code I've worked with did use 4 spaces.  I
+wouldn't even care weren't it for the message displayed after it's
+done.
+
+#+BEGIN_SRC emacs-lisp
+(setq python-indent-guess-indent-offset nil)
+#+END_SRC
+
+*** Typing of Emacs
+
+Please don't litter my home directory with a score file.
+
+#+BEGIN_SRC emacs-lisp
+(setq toe-highscore-file "~/.emacs.d/etc/toe.score")
+#+END_SRC
+
+*** =re-builder=
+
+Interactive preview for RE construction.
+
+It's important to note that there's three flavours of regular
+expressions encountered in Emacs.  The =read= syntax is most
+reminiscent of other RE dialects, but only used in prompts.  The
+=string= syntax is used in code doubles the amount of backslashes as
+the RE strings are passed through the reader which removes the
+extraneous ones.  Finally, there's the ~rx~ macro one can use for
+writing lispy RE.
+
+All listed RE syntaxes are supported by =re-builder=.  For whatever
+reason though the =read= syntax is default (which doesn't make much
+sense for me since Evil gives me search/replace preview), I prefer
+having the =string= syntax as default.
+
+#+BEGIN_SRC emacs-lisp
+(setq reb-re-syntax 'string)
+#+END_SRC
+
+*** Etags
+
+I've created a =TAGS= file for finding the definitions to the C
+sources quickly.  To avoid prompting for its name, one can customize
+the following:
+
+#+BEGIN_SRC emacs-lisp
+(setq tags-file-name "TAGS")
+#+END_SRC
+
+*** Info
+
+Make copying use the lispy syntax by default and with a normal syntax
+argument copy the HTML link.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-info-copy-current-node-name (arg)
+  "Copy the lispy form of the current node.
+With a prefix argument, copy the link to the online manual
+instead."
+  (interactive "P")
+  (let* ((manual (file-name-sans-extension
+                  (file-name-nondirectory Info-current-file)))
+         (node Info-current-node)
+         (link (if (not arg)
+                   (format "(info \"(%s) %s\")" manual node)
+                 ;; NOTE this will only work with emacs-related nodes...
+                 (format "https://www.gnu.org/software/emacs/manual/html_node/%s/%s.html"
+                         manual (if (string= node "Top")
+                                    "index"
+                                  (replace-regexp-in-string " " "-" node))))))
+    (kill-new link)
+    (message link)))
+
+(with-eval-after-load 'info
+  (define-key Info-mode-map (kbd "c") 'my-info-copy-current-node-name))
+#+END_SRC
+
+*** nroff
+
+I'll just pretend that mdoc is the same as nroff:
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'auto-mode-alist '("\\.mdoc\\'" . nroff-mode))
+#+END_SRC
+
+** Packages outside Emacs
+
+Welcome to the blind spot of =emacs-devel=.  Unlike the people on
+there, I'll not pretend external packages are something to speak of in
+hushed tones.
+
+*** [[https://github.com/nonsequitur/smex/][smex]]
+
+Nice improvement over vanilla =M-x= that gives you persistency and
+better matching.  Let's give it more history and a different file.
+
+#+BEGIN_SRC emacs-lisp
+(setq smex-save-file (concat user-emacs-directory "etc/smex")
+      smex-history-length 50)
+#+END_SRC
+
+*** CSV
+
+After installing [[http://elpa.gnu.org/packages/csv-mode.html][csv-mode]] from [[http://elpa.gnu.org/][GNU ELPA]], I found out it's using a
+=:set= form in its customization option for the separators, therefore
+I had to figure out what "internal" variables they were setting and
+customized them.
+
+#+BEGIN_SRC emacs-lisp
+(setq csv-separators '(";" "	" ",")
+      csv-separator-chars '(?\; ?	 ?,)
+      csv--skip-regexp "^
+;	,"
+      csv-separator-regexp "[;	,]"
+      csv-font-lock-keywords '(("[;	,]" (0 'csv-separator-face))))
+#+END_SRC
+
+*** [[https://github.com/quelpa/quelpa][Quelpa]]
+
+A client-side [[http://melpa.org/][MELPA]].  Hugely useful for development, also useful to
+obtain packages that are not there or need to be built differently
+from what it offers.  [[https://github.com/junegunn/vim-plug][vim-plug]] comes close, but the closest equivalent
+to it would be the [[https://www.archlinux.org/pacman/makepkg.8.html][makepkg]] utility.
+
+This customization is necessary to have updates of packages happen,
+even if they already exist.
+
+#+BEGIN_SRC emacs-lisp
+(setq quelpa-upgrade-p t)
+#+END_SRC
+
+*** [[https://github.com/wasamasa/shackle][shackle]]
+
+Declarative popup window rules.
+
+#+BEGIN_SRC emacs-lisp
+(setq shackle-rules
+      '(((svg-2048-mode circe-query-mode) :same t)
+        ("*Help*" :align t :select t)
+        ("\\`\\*helm.*?\\*\\'" :regexp t :align t)
+        ((compilation-mode "\\`\\*firestarter\\*\\'"
+          "\\`\\*magit-diff: .*?\\'") :regexp t :noselect t)
+        ("\\`\\*cider-repl .*" :regexp t :align t :size 0.2)
+        ((inferior-scheme-mode "*shell*" "*eshell*") :popup t))
+       shackle-default-rule '(:select t)
+       shackle-default-size 0.4
+       shackle-inhibit-window-quit-on-same-windows t)
+#+END_SRC
+
+*** [[https://github.com/wasamasa/eyebrowse][eyebrowse]]
+
+Less clumsy management of window configurations.
+
+Switch back and forth just like my i3wm configuration, wrap around,
+too.
+
+#+BEGIN_SRC emacs-lisp
+(setq eyebrowse-switch-back-and-forth t
+      eyebrowse-wrap-around t)
+#+END_SRC
+
+*** [[https://github.com/company-mode/company-mode][company-mode]]
+
+The best auto-completion mode we have out there.
+
+The following sets up a good amount of UI tweaks and everything
+necessary for the global backends.
+
+#+BEGIN_SRC emacs-lisp
+(setq company-idle-delay 0.1
+      company-minimum-prefix-length 2
+      company-selection-wrap-around t
+      company-show-numbers t
+      company-require-match 'never
+      company-dabbrev-downcase nil
+      company-dabbrev-ignore-case t
+      company-backends '(company-jedi company-nxml
+                                      company-css company-capf
+                                      (company-dabbrev-code company-keywords)
+                                      company-files company-dabbrev)
+      company-jedi-python-bin "python")
+#+END_SRC
+
+Sometimes it's useful to narrow down the candidate list if it's overly
+long with something better than =C-s=.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'company
+  (define-key company-active-map (kbd "C-:") 'helm-company))
+#+END_SRC
+
+Hitting =ESC= does exit Evil's insert state (which is where I'm
+usually in when typing completable text), but still keeps the popup
+open.  A similiar problem applies to the candidate search, so here's a
+workaround for both:
+
+#+BEGIN_SRC emacs-lisp
+(defun my-company-abort ()
+  (interactive)
+  (company-abort)
+  (when (and (bound-and-true-p evil-mode)
+             (eq evil-state 'insert))
+    (evil-force-normal-state)))
+
+(with-eval-after-load 'company
+  (define-key company-active-map (kbd "<escape>") 'my-company-abort)
+  (define-key company-search-map (kbd "<escape>") 'company-search-abort))
+#+END_SRC
+
+I've transitioned from [[https://github.com/auto-complete/auto-complete][auto-complete-mode]] so I'm missing its selection
+behaviour.  Company is not quite there yet, but this remapping helps:
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'company
+  (define-key company-active-map (kbd "TAB") 'company-complete-common-or-cycle)
+  (define-key company-active-map (kbd "<tab>") 'company-complete-common-or-cycle)
+
+  (define-key company-active-map (kbd "S-TAB") 'company-select-previous)
+  (define-key company-active-map (kbd "<backtab>") 'company-select-previous))
+#+END_SRC
+
+Other helpful settings involve the frontends to preview the current
+candidate inline and triggering completion of it on a few selected
+keys, including =SPC=:
+
+#+BEGIN_SRC emacs-lisp
+(setq company-frontends
+      '(company-pseudo-tooltip-unless-just-one-frontend
+        company-echo-metadata-frontend
+        company-preview-frontend)
+      company-auto-complete t)
+#+END_SRC
+
+*** [[https://github.com/magnars/dash.el][dash]]
+
+Very useful library, too bad I don't know how to properly use it yet.
+Since it's sprinkled all over in code I'd like to have extra syntax
+highlighting for it.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'dash
+  (dash-enable-font-lock))
+#+END_SRC
+
+*** [[https://github.com/emacs-helm/helm][helm]]
+
+A polarizing package to say the least.  The good part of it is that it
+actually tries enabling abstractions over complex selection UI.  The
+bad part is that it's overly complex, hard to debug and prone to
+bizarre behaviour.  I've handed in ten bugs for it already and don't
+expect those to be the last.  With that being said I find it essential
+to quickly find your way through Emacs, I just wish it were less
+idiosyncratic and with developer documentation.
+
+**** Navigation
+
+The default navigation isn't as fast as it could be.  Automatically
+switching directories is a must for me.  Note the hack with
+~helm-ff--auto-update-state~, it's supposedly internal, but only set
+after using ~helm-find-files~ which essentially means that everything
+using the file selector won't get the auto-switching goodies unless a
+file has been found before.  With this hack however it will.  The
+other hack goes beyond the ~helm-ff-ido-style-backspace~ customization
+and unconditionally enables backspace going up one level in both kinds
+of file selectors.
+
+#+BEGIN_SRC emacs-lisp
+(setq helm-ff-ido-style-backspace 'always
+      helm-ff-auto-update-initial-value t
+      helm-ff--auto-update-state t)
+
+(with-eval-after-load 'helm-files
+  (define-key helm-read-file-map (kbd "<backspace>") 'helm-find-files-up-one-level)
+  (define-key helm-find-files-map (kbd "<backspace>") 'helm-find-files-up-one-level))
+#+END_SRC
+
+There are more idiosyncracies to be resolved with file selection.  I
+don't want to see boring files and not get prompted for creating a new
+file either.  The creation of a new directory however is kept as is.
+
+#+BEGIN_SRC emacs-lisp
+(setq helm-ff-newfile-prompt-p nil
+      helm-ff-skip-boring-files t)
+#+END_SRC
+
+**** Search
+
+[[http://www.gnu.org/software/grep/][grep]] is very fast, but not the best tool for code search, especially
+not within compressed files.  That's why I'll go for [[https://github.com/ggreer/the_silver_searcher/][ag]] instead, its
+=-z= option enables the usage of the very great [[http://libarchive.org/][libarchive]].  For
+=helm= to recognize the matches properly I need to enable line numbers
+and columns in its output, something the =--vimgrep== option (the
+irony) does.  Another subtle hack hidden in here is deliberately using
+the recursing variant for both types of searches, this might break
+something, but so far hasn't shown any obvious side-effects.
+
+#+BEGIN_SRC emacs-lisp
+(setq helm-grep-default-command "ag --vimgrep -z %p %f"
+      helm-grep-default-recurse-command "ag --vimgrep -z %p %f")
+#+END_SRC
+
+Here's two commands for pretty common queries, one going through the
+official Emacs Lisp sources, the other through the C parts:
+
+#+BEGIN_SRC emacs-lisp
+(defun my-grep-emacs-elisp ()
+  (interactive)
+  (helm-do-grep-1 '("/usr/share/emacs/*/lisp/*.el.gz"
+                    "/usr/share/emacs/*/lisp/*/*.el.gz")))
+
+(defun my-grep-emacs-C ()
+  (interactive)
+  (helm-do-grep-1 '("~/.emacs.d/src/*.c" "~/.emacs.d/src/*.h")))
+#+END_SRC
+
+**** ~completing-read~ behaviour
+
+For whatever reason ~find-library~ isn't used properly with
+~helm-mode~ enabled, adding a read handler fixes this.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'helm-mode
+  (add-to-list 'helm-completing-read-handlers-alist
+               '(find-library . helm-completing-read-with-cands-in-buffer)))
+#+END_SRC
+
+I dislike =helm= taking over tab-completion in my IRC client.
+
+#+BEGIN_SRC emacs-lisp
+(setq helm-mode-no-completion-in-region-in-modes
+      '(circe-channel-mode
+        circe-query-mode
+        circe-server-mode))
+#+END_SRC
+
+**** Other
+
+Highlighting of token matches is a tad slow, let's speed it up.
+
+#+BEGIN_SRC emacs-lisp
+(setq helm-mp-highlight-delay 0.3)
+#+END_SRC
+
+I like having my dotfiles repo as default when using =helm-cmd-t= on a
+directory that's not under version-control.
+
+#+BEGIN_SRC emacs-lisp
+(setq helm-cmd-t-default-repo "~/code/dotfiles")
+#+END_SRC
+
+I don't know why, but helm tries doing window management.  Please stop:
+
+#+BEGIN_SRC emacs-lisp
+(setq helm-display-function 'pop-to-buffer)
+#+END_SRC
+
+**** Custom commands
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'helm
+  (defun my-helm-rdictcc ()
+    (interactive)
+    (helm :sources 'my-helm-rdictcc-source
+          :buffer "*helm rdictcc*"))
+
+  (defvar my-helm-rdictcc-source
+    (helm-build-async-source "rdictcc"
+      :candidates-process 'my-helm-rdictcc-process
+      :candidate-number-limit 99
+      :filtered-candidate-transformer 'my-helm-rdictcc-transformer
+      :requires-pattern 3))
+
+  (defun my-helm-rdictcc-process ()
+    (let ((proc (start-process "rdictcc" helm-buffer "rdictcc" "-c" helm-pattern)))
+      (set-process-sentinel
+       proc
+       (lambda (process event)
+         (helm-process-deferred-sentinel-hook process event default-directory)))
+      proc))
+
+  (defun my-helm-rdictcc-transformer (candidates _source)
+    (let (result)
+      (dolist (candidate candidates)
+        (when (string-match-p "=\\{20\\}\\[ [AB] => [AB] \\]=\\{20\\}" candidate)
+          (add-face-text-property 0 (length candidate) 'font-lock-comment-face
+                                  nil candidate))
+        (push candidate result))
+      (nreverse result))))
+#+END_SRC
+
+*** [[https://github.com/flycheck/flycheck][flycheck]]
+
+There's a few languages I like having linting for, see [[Hooks]].
+Additionally to that there's few things to tweak.  For one I prever
+the =tex-lacheck= linter over the default =tex-chktex= linter and
+don't want to use the =emacs-lisp-checkdoc= one at all, another thing
+is that I don't want linting to start on an idle timer, but rather on
+opening the buffer and saving it to disk.
+
+#+BEGIN_SRC emacs-lisp
+(setq flycheck-disabled-checkers '(tex-chktex emacs-lisp-checkdoc)
+      flycheck-check-syntax-automatically '(mode-enabled save))
+#+END_SRC
+
+For whatever reason the =emacs-lisp= checker stopped unconditionally
+initializing packages before doing the check, the following avoids
+errors for dependencies in packages I write:
+
+#+BEGIN_SRC emacs-lisp
+(setq flycheck-emacs-lisp-initialize-packages t)
+#+END_SRC
+
+*** [[https://github.com/abo-abo/hydra][Hydra]]
+
+Not sure how to describe it.  A library for defining key-centric
+interfaces?  You use it to execute commands with single-key presses
+first and foremost, I have only come to define repetition-free ones.
+
+**** Define utility functions
+
+#+BEGIN_SRC emacs-lisp
+(defun my-zsh ()
+  (interactive)
+  (ansi-term "zsh"))
+
+(defun my-info-emacs-lisp-intro ()
+  (interactive)
+  (info "eintr"))
+
+(defun my-info-emacs-lisp-manual ()
+  (interactive)
+  (info "elisp"))
+
+(defun my-info-cl ()
+  (interactive)
+  (info "cl"))
+
+(defun my-info-cl-loop ()
+  (interactive)
+  (info "(cl) Loop facility"))
+
+(defun my-open-r5rs ()
+  (interactive)
+  (eww-open-file
+   "~/.usr/share/chicken/doc/manual/The R5RS standard.html"))
+
+(defun my-capture-journal ()
+  (interactive)
+  (org-capture nil "j"))
+
+(defun my-capture-note ()
+  (interactive)
+  (org-capture nil "n"))
+
+(defun my-capture-pw ()
+  (interactive)
+  (org-capture nil "p"))
+
+(defun my-capture-work ()
+  (interactive)
+  (org-capture nil "w"))
+
+(defun my-open-inbox ()
+  (interactive)
+  (find-file "~/org/inbox.org"))
+
+(defun my-open-journal ()
+  (interactive)
+  (find-file "~/org/journal.org"))
+
+(defun my-open-pw ()
+  (interactive)
+  (find-file "~/org/pw.org"))
+
+(defun my-open-tracking ()
+  (interactive)
+  (find-file "~/org/tracking.org"))
+
+(autoload 'cfw:open-org-calendar "calfw-org" "Open Org calendar" t)
+#+END_SRC
+
+**** Define setup function
+
+This is used in ~after-init-hook~.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-setup-hydra ()
+  (global-set-key
+   (kbd "<f1>")
+   (defhydra hydra-help (:color blue)
+     "Help"
+     ("a" helm-apropos "Apropos")
+     ("c" describe-char "Describe Char")
+     ("f" find-function "Find Function")
+     ("F" describe-function "Describe Function")
+     ("k" describe-key "Describe Key")
+     ("K" find-function-on-key "Find Key")
+     ("m" describe-mode "Describe Modes")
+     ("v" find-variable "Find Variable")
+     ("V" describe-variable "Describe Variable")))
+
+  (global-set-key
+   (kbd "<f2>")
+   (defhydra hydra-packages (:color blue)
+     "Packages"
+     ("c" helm-colors "Colors")
+     ("f" find-library "Find Library")
+     ("g" customize-group "Customize Group")
+     ("i" package-install "Package Install")
+     ("p" package-list-packages "Package List")
+     ("q" quelpa "Quelpa")
+     ("v" customize-variable "Customize Variable")))
+
+  (global-set-key
+   (kbd "<f3>")
+   (defhydra hydra-search (:color blue)
+     "Search"
+     ("a" helm-imenu-anywhere "Imenu Anywhere")
+     ("e" my-grep-emacs-elisp "Grep Emacs Elisp")
+     ("E" my-grep-emacs-C "Grep Emacs C")
+     ("g" helm-do-grep "Grep")
+     ("h" helm-org-headlines "Org Headlines")
+     ("i" helm-imenu "Imenu")
+     ("m" helm-multi-occur "Multi-occur")
+     ("o" helm-occur "Occur")))
+
+  (global-set-key
+   (kbd "<f4>")
+   (defhydra hydra-find (:color blue)
+     "Find"
+     ("b" helm-buffers-list "Buffers")
+     ("f" helm-find "Find")
+     ("i" helm-find-files "Find Files")
+     ("l" helm-locate "Locate")
+     ("t" helm-cmd-t "Cmd-T")))
+
+  (global-set-key
+   (kbd "<f5>")
+   (defhydra hydra-eval (:color blue)
+     "Eval"
+     ("c" calc "Calc")
+     ("e" eshell "Eshell")
+     ("g" magit-status "Magit")
+     ("i" ielm "IELM")
+     ("r" helm-regexp "Regexp")
+     ("s" shell "Shell")
+     ("t" my-zsh "Term")
+     ("x" helm-calcul-expression "Calculate Expression")))
+
+  (global-set-key
+   (kbd "<f6>")
+   (defhydra hydra-doc (:color blue)
+     "Doc"
+     ("c" my-info-cl "CL")
+     ("e" info-emacs-manual "Emacs manual")
+     ("i" info "Info")
+     ("l" my-info-emacs-lisp-manual "Emacs Lisp manual")
+     ("m" helm-man-woman "Man")
+     ("o" my-info-cl-loop "LOOP")
+     ("r" my-open-r5rs "R5RS")))
+
+  (global-set-key
+   (kbd "<f7>")
+   (defhydra hydra-zoom (:color blue)
+     "zoom"
+     ("l" helm-insert-latex-math "LaTeX Math")
+     ("u" helm-ucs "UCS")))
+
+  (global-set-key
+   (kbd "<f8>")
+   (defhydra hydra-misc (:color blue)
+     "Misc"
+     ("g" helm-google-suggest "Google Suggest")
+     ("p" helm-list-emacs-process "Emacs Process List")
+     ("s" helm-surfraw "Surfraw")
+     ("t" helm-top "Top")
+     ("w" helm-world-time "World time")))
+
+  (global-set-key
+   (kbd "<f9>")
+   (defhydra hydra-distractions (:color blue)
+     "Distractions"
+     ("i" my-irc "IRC")
+     ("t" tetris "Tetris")))
+
+  (global-set-key
+   (kbd "<f11>")
+   (defhydra hydra-capture (:color blue)
+     "Org Capture"
+     ("c" org-capture "Capture")
+     ("j" my-capture-journal "Journal")
+     ("n" my-capture-note "Note")
+     ("p" my-capture-pw "PW")
+     ("w" my-capture-work "Work")))
+
+  (global-set-key
+   (kbd "<f12>")
+   (defhydra hydra-lookup (:color blue)
+     "Org Lookup"
+     ("c" cfw:open-org-calendar "Calendar")
+     ("i" my-open-inbox "Inbox")
+     ("j" my-open-journal "Journal")
+     ("p" my-open-pw "PW")
+     ("t" my-open-tracking "Tracking"))))
+#+END_SRC
+
+*** [[https://github.com/clojure-emacs/cider][CIDER]]
+
+Clojure Interactive Development Environment that Rocks.
+
+I like =eldoc= for function signatures, hiding less interesting
+buffers is also nice to have.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'nrepl-interaction-mode-hook 'nrepl-turn-on-eldoc-mode)
+(setq nrepl-hide-special-buffers t)
+#+END_SRC
+
+*** [[https://github.com/slime/slime][SLIME]]
+
+The Superior Lisp Interaction Mode for Emacs.
+
+Let's fancy things up.
+
+#+BEGIN_SRC emacs-lisp
+(setq slime-contribs '(slime-fancy))
+#+END_SRC
+
+*** [[https://github.com/mooz/js2-mode/][js2-mode]]
+
+An IDE-like mode for editing Javascript.  Due to it actually parsing
+the code for highlighting and whatnot, it is used as dependency by a
+few other ones.
+
+Not only CSS is using a low indentation width these days.
+
+#+BEGIN_SRC emacs-lisp
+(setq js2-basic-offset 2)
+#+END_SRC
+
+*** [[http://web-mode.org/][web-mode]]
+
+Deals with all kinds of templates and other files with multiple modes
+one encounters in web development.  Other than templates, I prefer
+using it for HTML these days.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'auto-mode-alist '("\\.html?\\'" . web-mode))
+(add-to-list 'auto-mode-alist '("\\.tmpl\\'" . web-mode))
+(add-to-list 'auto-mode-alist '("\\.erb\\'" . web-mode))
+
+(setq web-mode-markup-indent-offset 2)
+(setq web-mode-css-indent-offset 2)
+(setq web-mode-code-indent-offset 2)
+#+END_SRC
+
+*** =company-jedi=
+
+Used to be part of [[https://github.com/proofit404/anaconda-mode][anaconda-mode]] which complements the built-in
+=python.el= with code navigation, documentation lookup and
+auto-completion.  I guess I should update soon.
+
+Not to be confused with [[https://github.com/syohex/emacs-company-jedi][company-jedi]] which got factored out from
+[[https://github.com/tkf/emacs-jedi][jedi.el]].
+
+Bootstrap [[https://github.com/davidhalter/jedi][jedi]] automatically per file for completion.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'python-mode-hook 'company-jedi-start)
+#+END_SRC
+
+*** =company-tern=
+
+[[http://ternjs.net/][Tern]] is kind of cool.  Don't forget installing it via =npm=, then
+adding a =.tern-project= file to your project root.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'js-mode-hook 'tern-mode)
+(add-to-list 'company-backends 'company-tern)
+#+END_SRC
+
+*** [[https://github.com/zenspider/enhanced-ruby-mode][enh-ruby-mode]]
+
+I'm using this mode for everything the stock =ruby-mode= would be used
+for because it provides better syntax highlighting and indentation by
+using an external process.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'auto-mode-alist '("\\.rb\\'" . enh-ruby-mode))
+(add-to-list 'auto-mode-alist '("Gemfile\\'" . enh-ruby-mode))
+(add-to-list 'auto-mode-alist '("Rakefile\\'" . enh-ruby-mode))
+(add-to-list 'auto-mode-alist '("\\.rake\\'" . enh-ruby-mode))
+#+END_SRC
+
+For deep indentation, allow bouncing towards a less deep level.
+
+#+BEGIN_SRC emacs-lisp
+(setq enh-ruby-bounce-deep-indent t)
+#+END_SRC
+
+*** [[https://github.com/nonsequitur/inf-ruby][inf-ruby]]
+
+Because Emacs doesn't come with =M-x inf-ruby= (but has =M-x run-python=).
+
+[[https://github.com/pry/pry][pry]] is awesome and serves me as a better Ruby REPL.
+
+#+BEGIN_SRC emacs-lisp
+(setq inf-ruby-default-implementation "pry")
+#+END_SRC
+
+*** [[https://www.gnu.org/software/auctex/][AUCTEX]]
+
+Improves the standard editing facilities for all things [[http://tug.org/begin.html][TeX]] and [[http://latex-project.org/][LaTeX]].
+
+**** Usage tweaks
+
+It's 2015 and I prefer a TeX engine that can deal with Unicode and use
+any font I like.
+
+#+BEGIN_SRC emacs-lisp
+(setq-default TeX-engine 'luatex)
+#+END_SRC
+
+Set up viewers and a few other things.
+
+#+BEGIN_SRC emacs-lisp
+(setq TeX-quote-after-quote t
+      TeX-auto-save t
+      TeX-parse-self t
+      TeX-view-program-list '(("llpp" "llpp %o"))
+      TeX-view-program-selection '(((output-dvi style-pstricks)
+                                    "dvips and gv")
+                                   (output-dvi "xdvi")
+                                   (output-pdf "llpp")
+                                   (output-html "xdg-open")))
+#+END_SRC
+
+Enable PDF mode, enable folding and add a few convenience keybinds
+(like =C-c C-a= to run every command until the document can be
+viewed).
+
+#+BEGIN_SRC emacs-lisp
+(defun my-extend-hs-modes-alist ()
+  (add-to-list 'hs-special-modes-alist
+               `(latex-mode ,(latex/section-regexp) nil "%"
+                            (lambda (arg) (latex/next-section 1)
+                              (skip-chars-backward " \t\n")) nil)))
+
+(autoload 'latex/section-regexp "latex-extra" "LaTeX section regexp" t)
+
+(defun my-latex-setup ()
+  (TeX-PDF-mode)
+  (latex/setup-keybinds)
+  (my-extend-hs-modes-alist))
+
+(add-hook 'LaTeX-mode-hook 'my-latex-setup)
+#+END_SRC
+
+**** ~completing-read~ behaviour
+
+~helm-mode~ enables more convenient ~completing-read~, however it's a
+bit silly that [[https://github.com/emacs-helm/helm/issues/37][candidates for common AUCTEX functions aren't required
+matches]].
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'tex
+  (defun TeX-command-master (&optional override-confirm)
+    "Run command on the current document.
+
+If a prefix argument OVERRIDE-CONFIRM is given, confirmation will
+depend on it being positive instead of the entry in `TeX-command-list'."
+    (interactive "P")
+    (TeX-command (my-TeX-command-query (TeX-master-file)) 'TeX-master-file
+                 override-confirm))
+
+
+  (defun TeX-command-query (name)
+    "Query the user for what TeX command to use."
+    (let* ((default
+             (cond ((if (string-equal name TeX-region)
+                        (TeX-check-files (concat name "." (TeX-output-extension))
+                                         (list name)
+                                         TeX-file-extensions)
+                      (TeX-save-document (TeX-master-file)))
+                    TeX-command-default)
+                   ((and (memq major-mode '(doctex-mode latex-mode))
+                         ;; Want to know if bib file is newer than .bbl
+                         ;; We don't care whether the bib files are open in emacs
+                         (TeX-check-files (concat name ".bbl")
+                                          (mapcar 'car
+                                                  (LaTeX-bibliography-list))
+                                          (append BibTeX-file-extensions
+                                                  TeX-Biber-file-extensions)))
+                    ;; We should check for bst files here as well.
+                    (if LaTeX-using-Biber TeX-command-Biber TeX-command-BibTeX))
+                   ((TeX-process-get-variable name
+                                              'TeX-command-next
+                                              TeX-command-Show))
+                   (TeX-command-Show)))
+           (completion-ignore-case t)
+           (answer (or TeX-command-force
+                       (completing-read
+                        (concat "Command: (default " default ") ")
+                        (TeX-mode-specific-command-list major-mode) nil t
+                        default 'TeX-command-history))))
+      ;; If the answer is "latex" it will not be expanded to "LaTeX"
+      (setq answer (car-safe (TeX-assoc answer TeX-command-list)))
+      (if (and answer
+               (not (string-equal answer "")))
+          answer
+        default))))
+
+(with-eval-after-load 'latex
+  (defun LaTeX-section-heading ()
+    "Hook to prompt for LaTeX section name.
+Insert this hook into `LaTeX-section-hook' to allow the user to change
+the name of the sectioning command inserted with `\\[LaTeX-section]'."
+    (let ((string (completing-read
+                   (concat "Level: (default " name ") ")
+                   LaTeX-section-list
+                   nil nil name)))
+      ; Update name
+      (if (not (zerop (length string)))
+          (setq name string))
+      ; Update level
+      (setq level (LaTeX-section-level name))))
+
+  (defun LaTeX-environment (arg)
+    "Make LaTeX environment (\\begin{...}-\\end{...} pair).
+With optional ARG, modify current environment.
+
+It may be customized with the following variables:
+
+`LaTeX-default-environment'       Your favorite environment.
+`LaTeX-default-style'             Your favorite document class.
+`LaTeX-default-options'           Your favorite document class options.
+`LaTeX-float'                     Where you want figures and tables to float.
+`LaTeX-table-label'               Your prefix to labels in tables.
+`LaTeX-figure-label'              Your prefix to labels in figures.
+`LaTeX-default-format'            Format for array and tabular.
+`LaTeX-default-width'             Width for minipage and tabular*.
+`LaTeX-default-position'          Position for array and tabular."
+
+    (interactive "*P")
+    (let ((environment (completing-read (concat "Environment type: (default "
+                                                (if (TeX-near-bobp)
+                                                    "document"
+                                                  LaTeX-default-environment)
+                                                ") ")
+                                        (LaTeX-environment-list) nil t nil
+                                        'LaTeX-environment-history LaTeX-default-environment)))
+      ;; Get default
+      (cond ((and (zerop (length environment))
+                  (TeX-near-bobp))
+             (setq environment "document"))
+            ((zerop (length environment))
+             (setq environment LaTeX-default-environment))
+            (t
+             (setq LaTeX-default-environment environment)))
+
+      (let ((entry (assoc environment (LaTeX-environment-list))))
+        (if (null entry)
+            (LaTeX-add-environments (list environment)))
+
+        (if arg
+            (LaTeX-modify-environment environment)
+          (LaTeX-environment-menu environment))))))
+#+END_SRC
+
+*** [[https://github.com/Fuco1/smartparens/][smartparens]]
+
+Promises to go beyond [[http://mumble.net/~campbell/emacs/paredit.el][paredit]] (which is structured editing for Lisp
+code) by supporting other languages than Lisp-likes with arbitrary
+kinds of pairs.  I only use its autopairing feature, pair highlighting
+and a bit of auto-indent though.
+
+**** Disable some default pairs
+
+The following wall of code disables pairs for Lisp- and TeX-like modes
+that make absolutely no sense.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'smartparens
+  (sp-local-pair 'minibuffer-inactive-mode "'" nil :actions nil)
+  (sp-local-pair 'minibuffer-inactive-mode "`" nil :actions nil)
+  (sp-local-pair 'emacs-lisp-mode "'" nil :actions nil)
+  (sp-local-pair 'emacs-lisp-mode "`" nil :actions nil)
+  (sp-local-pair 'lisp-interaction-mode "'" nil :actions nil)
+  (sp-local-pair 'lisp-interaction-mode "`" nil :actions nil)
+  (sp-local-pair 'scheme-mode "'" nil :actions nil)
+  (sp-local-pair 'scheme-mode "`" nil :actions nil)
+  (sp-local-pair 'inferior-scheme-mode "'" nil :actions nil)
+  (sp-local-pair 'inferior-scheme-mode "`" nil :actions nil)
+
+  (sp-local-pair 'LaTeX-mode "\"" nil :actions nil)
+  (sp-local-pair 'LaTeX-mode "'" nil :actions nil)
+  (sp-local-pair 'LaTeX-mode "`" nil :actions nil)
+  (sp-local-pair 'latex-mode "\"" nil :actions nil)
+  (sp-local-pair 'latex-mode "'" nil :actions nil)
+  (sp-local-pair 'latex-mode "`" nil :actions nil)
+  (sp-local-pair 'TeX-mode "\"" nil :actions nil)
+  (sp-local-pair 'TeX-mode "'" nil :actions nil)
+  (sp-local-pair 'TeX-mode "`" nil :actions nil)
+  (sp-local-pair 'tex-mode "\"" nil :actions nil)
+  (sp-local-pair 'tex-mode "'" nil :actions nil)
+  (sp-local-pair 'tex-mode "`" nil :actions nil))
+#+END_SRC
+
+**** Add IDE-like auto-insertion for braces
+
+Working on college assignments in both C and Java made me wish for an
+interesting feature I've seen in IDEs: Automatic insertion of a
+correctly indented newline before the closing brace which allows you
+to enter its content right away.  The following is stolen from [[https://github.com/Fuco1/smartparens/wiki/Permissions#pre-and-post-action-hooks][its
+wiki]].
+
+#+BEGIN_SRC emacs-lisp
+(defun my-create-newline-and-enter-sexp (&rest _ignored)
+  "Open a new brace or bracket expression, with relevant newlines and indent."
+  (newline)
+  (indent-according-to-mode)
+  (forward-line -1)
+  (indent-according-to-mode))
+
+(with-eval-after-load 'smartparens
+  (sp-local-pair 'c-mode "{" nil :post-handlers
+                 '((my-create-newline-and-enter-sexp "RET")))
+  (sp-local-pair 'java-mode "{" nil :post-handlers
+                 '((my-create-newline-and-enter-sexp "RET"))))
+#+END_SRC
+
+**** Other
+
+First of all, no long pair mismatch messages please, they're reserved
+for debugging purposes.
+
+#+BEGIN_SRC emacs-lisp
+(setq sp-message-width nil)
+#+END_SRC
+
+Because I'm using =evil=, funny things are happening with my cursor,
+like it not going beyond the end of the line in normal state.  To
+emulate a bit more Vim-like paren highlighting, pairs should be shown
+from inside, too.
+
+#+BEGIN_SRC emacs-lisp
+(setq sp-show-pair-from-inside t)
+#+END_SRC
+
+Automatic quote escaping feels like a mistake to me (and to its author
+as well ._.).
+
+#+BEGIN_SRC emacs-lisp
+(setq sp-autoescape-string-quote nil)
+#+END_SRC
+
+This curiously named variable controls whether the overlay spanning
+the pair's content disappears on backwards motions, something entirely
+different than its name suggests.
+
+#+BEGIN_SRC emacs-lisp
+(setq sp-cancel-autoskip-on-backward-movement nil)
+#+END_SRC
+
+*** [[https://bitbucket.org/lyro/evil/wiki/Home][Evil]]
+
+Here comes the set of sane text editing keybindings I can't live
+without.  Both implementation and execution are excellent and reuse as
+much from Emacs as possible, resulting in very high compatibility and
+feature coverage.  The only thing I can complain about is that its
+sources are pretty much incomprehensible to me.
+
+Despite that weakness I've managed writing my own additions to improve
+integration a good bit more according to my own tastes.
+
+**** Initial state
+
+First of all, there are plenty of special modes where neither insert
+state nor motion state suffice.  I've instead decided to do away with
+motion state and going for Emacs state whenever it makes sense.  To
+aid Evil with this, I've modified its function that decides upon the
+initial state for a major mode to look up derived modes and aliases.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-real-function (fun)
+  "Figure out the actual symbol behind a function.
+Returns a different symbol if FUN is an alias, otherwise FUN."
+  (let ((symbol-function (symbol-function fun)))
+    (if (symbolp symbol-function)
+        symbol-function
+      fun)))
+
+(defun my-derived-mode-p (mode modes)
+  (let ((parent (my-real-function mode)))
+    (while (and parent (not (memq parent modes)))
+      (setq parent (my-real-function (get parent 'derived-mode-parent))))
+    parent))
+
+(with-eval-after-load 'evil-core
+  (defun evil-initial-state (mode &optional default)
+    "Return the Evil state to use for MODE.
+Returns DEFAULT if no initial state is associated with MODE.
+The initial state for a mode can be set with
+`evil-set-initial-state'."
+    (let (state modes)
+      (catch 'done
+        (dolist (entry (nreverse (evil-state-property t :modes)) default)
+          (setq state (car entry)
+                modes (symbol-value (cdr entry)))
+          (when (or (memq mode modes)
+                    (my-derived-mode-p mode modes))
+            (throw 'done state)))))))
+
+(setq evil-default-state 'emacs
+      evil-emacs-state-modes nil
+      evil-insert-state-modes nil
+      evil-motion-state-modes nil
+      evil-normal-state-modes '(text-mode prog-mode fundamental-mode
+                                          css-mode conf-mode
+                                          TeX-mode LaTeX-mode
+                                          diff-mode))
+#+END_SRC
+
+~org-capture-mode~ is a minor mode, that's why I need to use its hook
+instead.  Same goes for ~view-mode~.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'org-capture-mode-hook 'evil-insert-state)
+(add-hook 'with-editor-mode-hook 'evil-insert-state)
+(add-hook 'view-mode-hook 'evil-emacs-state)
+#+END_SRC
+
+Allow quitting =M-x magit-blame= with =q= by toggling Evil's current
+state.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-evil-toggle ()
+  (interactive)
+  (cond
+    ((memq evil-state '(insert normal))
+     (evil-emacs-state))
+    ((eq evil-state 'emacs)
+     (evil-exit-emacs-state))))
+
+(add-hook 'magit-blame-mode-hook 'my-evil-toggle)
+#+END_SRC
+
+**** More Emacs-like feel
+
+These make movement, undo and search feel a bit less weird.
+
+#+BEGIN_SRC emacs-lisp
+(setq evil-cross-lines t
+      evil-move-beyond-eol t
+      evil-want-fine-undo t
+      evil-symbol-word-search t)
+#+END_SRC
+
+However, I want =C-w= to still be the window map prefix in Emacs state
+(instead of the standard ~kill-region~ command).  As the customization
+setting for that is applied in =evil-maps.el= which is loaded by
+=evil.el=, I need to load it before enabling ~evil-mode~.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-vars
+  (setq evil-want-C-w-in-emacs-state t))
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-common
+  (evil-declare-motion 'recenter-top-bottom))
+#+END_SRC
+
+**** Keymap hacking
+
+I want =Y= to yank to the end of line.
+
+#+BEGIN_SRC emacs-lisp
+(setq evil-want-Y-yank-to-eol t)
+#+END_SRC
+
+Some minor modes come with keymaps reminiscent of special major modes,
+these get overridden by Evil.  These can be fixed by using
+~evil-normalize-keymaps~, at least for ~edebug-mode~.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'edebug-mode-hook 'evil-normalize-keymaps)
+#+END_SRC
+
+~macrostep-mode~ requires a bit more effort, see [[https://bitbucket.org/lyro/evil/issue/511/let-certain-minor-modes-key-bindings][evil#511]] for the code
+involved and further explanation.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-macrostep-setup ()
+  (evil-make-overriding-map macrostep-keymap 'normal)
+  (evil-normalize-keymaps))
+(add-hook 'macrostep-mode-hook 'my-macrostep-setup)
+#+END_SRC
+
+Same goes for ~cider-debug~:
+
+#+BEGIN_SRC emacs-lisp
+(defun my-cider-debug-setup ()
+  (evil-make-overriding-map cider--debug-mode-map 'normal)
+  (evil-normalize-keymaps))
+(add-hook 'cider--debug-mode-hook 'my-cider-debug-setup)
+#+END_SRC
+
+Let's poke some holes into its keymaps.  Anything not bound will be
+passed through to Emacs other keymaps.  Because =SPC=, =RET= and =TAB=
+are bound to rather silly commands in Vim I'm unbinding them to allow
+for much more useful Emacs commands (such as context-aware indentation, following
+links, scrolling a page down, etc.).
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-motion-state-map (kbd "SPC") nil)
+  (define-key evil-motion-state-map (kbd "RET") nil)
+  (define-key evil-motion-state-map (kbd "TAB") nil))
+#+END_SRC
+
+Same story with =C-.= and =M-.=, the latter is usually bound to lookup
+of symbol at point.  The former is unbound because I'm fat-fingering
+often.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd "C-.") nil)
+  (define-key evil-normal-state-map (kbd "M-.") nil))
+#+END_SRC
+
+The hole poking continues, this time for the insert state and ex
+completion keymap.  Everything with a modifier (except for the toggle
+key for Emacs state and other useful keys) has to go.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (setcdr evil-insert-state-map
+          (let ((toggle-key (string-to-char (kbd evil-toggle-key))))
+            (--reject
+             (and (memq 'control (event-modifiers (car-safe it)))
+                  (/= (car-safe it) toggle-key))
+             (cdr evil-insert-state-map))))
+
+  (setcdr evil-ex-completion-map
+          (--reject
+           (and (memq 'control (event-modifiers (car-safe it)))
+                ;; abort prompt
+                (/= (car-safe it) ?\C-c)
+                (/= (car-safe it) ?\C-g)
+                ;; previous/next input
+                (/= (car-safe it) ?\C-p)
+                (/= (car-safe it) ?\C-n))
+           (cdr evil-ex-completion-map))))
+#+END_SRC
+
+**** =C-w=
+
+=C-w= works in Emacs state, but not in insert state.  Let's fix that.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-insert-state-map (kbd "C-w") 'evil-window-map))
+#+END_SRC
+
+**** =C-i=
+
+=C-i= is used in Vim as counterpart to =C-o= for going back and forth
+in the jump list.  It also happens to be interpreted as =TAB=, simply
+because terminals are a nightmare.  Fortunately GUI Emacs can be told
+to not resolve =C-i= to indentation by defining a function in
+~key-translation-map~ that returns the desired key.  That way I'm
+sending a custom =<C-i>= when Evil is active, in normal state and
+=C-i= (as opposed to the =TAB= key) has been pressed, otherwise =TAB=
+is passed through.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-translate-C-i (_prompt)
+  (if (and (= (length (this-single-command-raw-keys)) 1)
+           (eql (aref (this-single-command-raw-keys) 0) ?\C-i)
+           (bound-and-true-p evil-mode)
+           (eq evil-state 'normal))
+      (kbd "<C-i>")
+    (kbd "TAB")))
+
+(define-key key-translation-map (kbd "TAB") 'my-translate-C-i)
+
+(with-eval-after-load 'evil-maps
+  (define-key evil-motion-state-map (kbd "<C-i>") 'evil-jump-forward))
+#+END_SRC
+
+**** =C-u=
+
+=C-u= is bound to a scroll up command in Vim, in Emacs however it's
+used for the prefix argument.  This feels pretty weird to me after
+having bothered learning =C-u= as command for killing a whole line in
+everything using the readline library.  I consider =M-u= as a good
+replacement considering it's bound to the rather useless ~upcase-word~
+command by default which I most definitely will not miss.
+
+#+BEGIN_SRC emacs-lisp
+(define-key global-map (kbd "C-u") 'kill-whole-line)
+(define-key global-map (kbd "M-u") 'universal-argument)
+(define-key universal-argument-map (kbd "C-u") nil)
+(define-key universal-argument-map (kbd "M-u") 'universal-argument-more)
+(with-eval-after-load 'evil-maps
+  (define-key evil-motion-state-map (kbd "C-u") 'evil-scroll-up))
+#+END_SRC
+
+**** Extra keybindings
+
+Emacs 24.4 introduced ~electric-indent-mode~ as default which happens
+to be a global mode.  I'm not particularly fond of it (and anything
+starting with =electric-=), that's why I disable it later after
+initialization is done and instead bind ~newline-and-indent~ in insert
+state.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-insert-state-map (kbd "RET") 'newline-and-indent))
+#+END_SRC
+
+Let's get rid of =;= for the questionable benefit of having a modifier
+less to hit for entering ex state.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-motion-state-map (kbd ";") 'evil-ex)
+  (define-key evil-visual-state-map (kbd ";") 'evil-ex))
+#+END_SRC
+
+=U= is a much more fit key for redoing than =C-r=.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd "U") 'undo-tree-redo))
+#+END_SRC
+
+The [[https://github.com/cofi/evil-numbers][evil-numbers]] package is pretty nice, but I don't want to use the
+standard Vim keybinds (=C-a= and =C-x=) for its commands.  Instead I'm
+going for the much more mnemonic =+= and =-=.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd "-") 'evil-numbers/dec-at-pt)
+  (define-key evil-normal-state-map (kbd "+") 'evil-numbers/inc-at-pt))
+#+END_SRC
+
+I'm not sure what to think of the [[https://github.com/winterTTr/ace-jump-mode/][ace-jump]].  For convenience I've
+reduced its jump keys to the homerow and bound a few commands.
+
+#+BEGIN_SRC emacs-lisp
+(setq ace-jump-mode-move-keys '(?a ?s ?d ?f ?g ?h ?j ?k ?l ?\;))
+
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd "SPC") 'evil-ace-jump-char-mode)
+  (define-key evil-normal-state-map (kbd "S-SPC") 'evil-ace-jump-word-mode)
+  (define-key evil-normal-state-map (kbd "C-SPC") 'evil-ace-jump-line-mode)
+  (define-key evil-operator-state-map (kbd "SPC") 'evil-ace-jump-char-mode)
+  (define-key evil-operator-state-map (kbd "S-SPC") 'evil-ace-jump-word-mode)
+  (define-key evil-operator-state-map (kbd "C-SPC") 'evil-ace-jump-line-mode))
+#+END_SRC
+
+The =z= map is full of keybindings I can never remember for dealing
+with code folding.  First of all, get rid of them.
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (setcdr evil-normal-state-map
+          (--reject
+           (eq (car-safe it) ?z)
+           (cdr evil-normal-state-map)))
+
+  (setcdr evil-motion-state-map
+          (--reject
+           (eq (car-safe it) ?z)
+           (cdr evil-motion-state-map))))
+#+END_SRC
+
+Next, define a few toggling commands and bind them.
+
+#+BEGIN_SRC emacs-lisp
+(defvar my-hs-hide nil
+  "Current state of hideshow for toggling all.")
+
+(with-eval-after-load 'evil-common
+  (evil-define-command my-evil-toggle-folds ()
+    "Open or close all folds."
+    (setq my-hs-hide (not my-hs-hide))
+    (if my-hs-hide
+        (hs-hide-all)
+      (hs-show-all))))
+
+(defun my-toggle-mode-line-minor-modes ()
+  (interactive)
+  (if rm-blacklist
+      (setq rm-blacklist nil)
+    (setq rm-blacklist ".*"))
+  (force-mode-line-update t))
+
+(defun my-narrow-to-region-with-mode (beg end mode)
+  (interactive (list (region-beginning) (region-end)
+                     (completing-read "Major mode: "
+                                      (mapcar 'cdr auto-mode-alist) nil t)))
+  (unless (region-active-p)
+    (error "No region for narrowing selected"))
+  (narrow-to-region beg end)
+  (deactivate-mark)
+  (funcall (intern mode)))
+
+(defun my-revert-buffer ()
+  (interactive)
+  (revert-buffer nil t))
+
+(defun my-theme-toggle ()
+  (interactive)
+  (cond
+   ((memq 'punpun-light custom-enabled-themes)
+    (disable-theme 'punpun-light)
+    (load-theme 'punpun-dark t))
+   ((memq 'punpun-dark custom-enabled-themes)
+    (disable-theme 'punpun-dark)
+    (load-theme 'punpun-light t))))
+
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd "z r") 'my-revert-buffer)
+  (define-key evil-normal-state-map (kbd "z b") 'magit-blame)
+  (define-key evil-normal-state-map (kbd "z s") 'describe-char)
+  (define-key evil-normal-state-map (kbd "z e") 'toggle-debug-on-error)
+  (define-key evil-normal-state-map (kbd "z q") 'toggle-debug-on-quit)
+  (define-key evil-normal-state-map (kbd "z t") 'my-theme-toggle)
+  (define-key evil-normal-state-map (kbd "z m") 'my-toggle-mode-line-minor-modes)
+  (define-key evil-normal-state-map (kbd "z n") 'my-narrow-to-region-with-mode)
+  (define-key evil-normal-state-map (kbd "z TAB") 'evil-toggle-fold)
+  (define-key evil-normal-state-map (kbd "z <backtab>") 'my-evil-toggle-folds))
+#+END_SRC
+
+Define my most-used helpers (stolen from [[https://github.com/tpope/vim-unimpaired][unimpaired.vim]]) next.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-evil-unimpaired-insert-newline-above (count)
+  "Insert an empty line below point"
+  (interactive "p")
+  (save-excursion
+    (dotimes (i count)
+      (evil-insert-newline-above))))
+
+(defun my-evil-unimpaired-insert-newline-below (count)
+  "Insert an empty line below point"
+  (interactive "p")
+  (save-excursion
+    (dotimes (i count)
+      (evil-insert-newline-below))))
+
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd "[ SPC") 'my-evil-unimpaired-insert-newline-above)
+  (define-key evil-normal-state-map (kbd "] SPC") 'my-evil-unimpaired-insert-newline-below))
+#+END_SRC
+
+Add a few convenience bindings to the window map on =C-w=.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-work-on-scratch ()
+  (interactive)
+  (switch-to-buffer (get-buffer-create "*scratch*")))
+
+(with-eval-after-load 'evil-maps
+  (define-key evil-window-map (kbd "n") 'my-work-on-scratch)
+  (define-key evil-window-map (kbd "u") 'winner-undo)
+  (define-key evil-window-map (kbd "b") 'helm-mini)
+  (define-key evil-window-map (kbd "d") 'kill-buffer)
+  (define-key evil-window-map (kbd "D") 'kill-buffer-and-window)
+  (define-key evil-window-map (kbd "C-d") 'kill-buffer-and-window))
+#+END_SRC
+
+Then some "leader" bindings.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-switch-to-last-buffer ()
+  (interactive)
+  (switch-to-buffer (other-buffer)))
+
+(defun my-find-file-with-root-privileges (filename)
+  (interactive "F")
+  (let ((pw (concat (password-read "Enter password: ") "\n"))
+        (sudo-process (start-process "Sudo" "*sudo*" "sudo" "-Se" filename)))
+    (process-send-string sudo-process pw)))
+
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd ", ,") 'my-switch-to-last-buffer)
+  (define-key evil-normal-state-map (kbd ", .") 'helm-mini)
+  (define-key evil-normal-state-map (kbd ", /") 'helm-find-files)
+  (define-key evil-normal-state-map (kbd ", ?") 'my-find-file-with-root-privileges))
+#+END_SRC
+
+As =calc= keeps bewildering me, but =calculator= doesn't, I'll bind
+the latter for one-off calculations:
+
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'evil-maps
+  (define-key evil-normal-state-map (kbd "=") 'calculator))
+#+END_SRC
+
+**** Load supplementary modes
+
+Finally, there's a few minor modes depending on Evil being loaded
+before they are.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-after-evil ()
+  (global-surround-mode)
+  (eyebrowse-mode)
+  (eyebrowse-setup-opinionated-keys))
+
+(add-hook 'evil-mode-hook 'my-after-evil)
+#+END_SRC
+
+*** [[https://github.com/capitaomorte/yasnippet][yasnippet]]
+
+Snippets are quite useful for boilerplatey languages.  Like, Java.
+Although, if you take it far enough, even something as =org-mode=
+qualifies considering I can never remember the proper syntax for code
+blocks.  The following sets up a single directory for snippets.
+
+#+BEGIN_SRC emacs-lisp
+(setq yas-snippet-dirs '("~/.emacs.d/snippets"))
+(with-eval-after-load 'yasnippet
+  (yas-reload-all))
+#+END_SRC
+
+*** [[https://github.com/jorgenschaefer/circe][Circe]]
+
+=rcirc= is too small, [[http://savannah.gnu.org/projects/erc/][ERC]] is too large.  So I chose Circe as my IRC
+client living inside Emacs.  As for why IRC in Emacs in the first
+place, I wanted to leave irssi behind and didn't really like Weechat.
+So, why not try something extensible?
+
+**** Authentication and identification
+
+First of all, let's define who I am and change the quit/part message
+to something less advertising.
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-default-nick "wasamasa"
+      circe-default-user "wasamasa"
+      circe-default-realname "wasamasa"
+      circe-default-part-message "Bye"
+      circe-default-quit-message "Bye")
+#+END_SRC
+
+I'm using [[http://wiki.znc.in/ZNC][ZNC]] to connect to both [[http://freenode.net/][Freenode]] and the [[http://www.d-t-net.de/][f0o]] network, but
+Bitlbee for Jabber.  Passwords for the [[https://en.wikipedia.org/wiki/Internet_Relay_Chat_services#NickServ][Nickserv service]] are kept in a
+private file which is read in by a password function.
+
+#+BEGIN_SRC emacs-lisp
+(setq my-credentials-file "~/.emacs.d/etc/private.el")
+
+(defun my-retrieve-irc-password (_)
+  (let ((network circe-server-network))
+    (with-temp-buffer
+      (insert-file-contents-literally my-credentials-file)
+      (let ((plist (read (buffer-string))))
+        (if (string= network "Bitlbee")
+            (plist-get plist :bitlbee-password)
+          (plist-get plist :znc-password))))))
+
+(setq circe-network-options
+      '(("ZNC/freenode" :host "brause.cc" :port 30832 :family ipv4
+         :user "wasamasa/freenode" :pass my-retrieve-irc-password)
+        ("ZNC/f0o" :host "brause.cc" :port 30833 :family ipv4
+         :user "wasamasa/f0o" :pass my-retrieve-irc-password)
+        ("Bitlbee" :nickserv-password my-retrieve-irc-password)))
+#+END_SRC
+
+**** Basic usability tweaks
+
+I cannot imagine why I wouldn't want to use in-line tab-completion
+with cycling just as it exists in other IRC clients.
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-use-cycle-completion t)
+#+END_SRC
+
+[[http://www.weechat.org/files/doc/weechat_faq.en.html#filter_irc_join_part_quit][Smart filter]] is like the best IRC-related invention ever!
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-reduce-lurker-spam t)
+#+END_SRC
+
+Let's customize a few format strings.
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-format-self-say "<{nick}> {body}"
+      circe-format-server-topic "*** Topic Change by {userhost}: {topic-diff}"
+      circe-server-buffer-name "{network}"
+      circe-prompt-string (propertize ">>> " 'face 'circe-prompt-face))
+#+END_SRC
+
+Other entities using my nickname are not ghosted by default, that's
+why I enable it, but only after authenticating in some way.
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-nickserv-ghost-style 'after-auth)
+#+END_SRC
+
+ZNC handles autojoins for me, but Circe does not recognize these.  So,
+instead I'll just ignore all buffers that are opened implicitly.
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-new-buffer-behavior 'ignore)
+#+END_SRC
+
+I'm sending highlights to a =*hl*= buffer for occasionally taking a
+look at them, so please ignore tracking it.
+
+#+BEGIN_SRC emacs-lisp
+(setq tracking-ignored-buffers '("*hl*"))
+#+END_SRC
+
+When using the =circe-color-nicks= contrib module, please color
+nicknames /inside/ messages as well.
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-color-nicks-everywhere t)
+#+END_SRC
+
+Additionally to that, make use of colors more compatible with my theme.
+
+#+BEGIN_SRC emacs-lisp
+(setq circe-color-nicks-pool-type
+      '("#ffaf00" "#d75f00" "#d70000" "#00af00"
+        "#5f00ff" "#0087ff" "#ff005f" "#8700d7"))
+#+END_SRC
+
+**** Add extra keybinds
+
+Let's add a few extra keybindings common in all buffers Circe spawns.
+I want word killing to behave the same as for =comint=, =C-l= to
+redraw and reposition and =C-u= to kill the whole line since there's a
+more appropriate command than the default one bound to =C-u=.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-window-C-l ()
+  (interactive)
+  (goto-char (point-max))
+  (recenter-top-bottom -1))
+
+(with-eval-after-load 'lui
+  (define-key lui-mode-map (kbd "<remap> <kill-word>") 'my-kill-word)
+  (define-key lui-mode-map (kbd "<remap> <backward-kill-word>") 'my-backward-kill-word)
+  (define-key lui-mode-map (kbd "C-l") 'my-window-C-l)
+  (define-key lui-mode-map (kbd "C-u") 'lui-kill-to-beginning-of-line))
+#+END_SRC
+
+Copy-pasting from other sources (like, browsers) can leave more than
+one line of text in the input area.  Directly sending it would be
+annoying as this would result in either multiple messages or autopaste
+detection.  To avoid resorting to joining lines manually, I've written
+a command doing the opposite of =M-q=, but named it similiarly as the
+intent is the same (making the given text conform to a more suitable
+form).
+
+#+BEGIN_SRC emacs-lisp
+(defun my-fill-lui-input ()
+  (interactive)
+  (fill-delete-newlines lui-input-marker (point-max) nil nil nil)
+  (goto-char (point-max)))
+
+(with-eval-after-load 'lui
+  (define-key lui-mode-map (kbd "M-q") 'my-fill-lui-input))
+#+END_SRC
+
+Sometimes I like knowing just how many people are online.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-circe-count-nicks ()
+  (interactive)
+  (when (eq major-mode 'circe-channel-mode)
+    (message "%i entities are online on %s."
+             (length (circe-channel-nicks))
+             (buffer-name))))
+
+(with-eval-after-load 'circe
+  (define-key circe-channel-mode-map (kbd "C-c n") 'my-circe-count-nicks))
+#+END_SRC
+
+**** Hacks
+
+The standard nickname switching function is a bit silly.  I own a
+bunch of nicknames and will use the =wasa= one for switching.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-circe-nick-next (oldnick)
+    (cond ((string= oldnick "wasamasa") "wasa")
+          ((string= oldnick "wasa" "wasamasa"))))
+
+(setq circe-nick-next-function 'my-circe-nick-next)
+#+END_SRC
+
+There isn't a highlighting function /yet/ that could do something
+useful like setting a X urgency hint (taken from [[http://www.emacswiki.org/emacs/JabberEl][the wiki]]), asides
+from that I want a bit more of control to treat highlights in private
+queries different from channel highlights.  The following code yanks
+out the default one and replaces it with something slightly better.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-x-urgency-hint ()
+  (let* ((wm-hints (append (x-window-property
+                            "WM_HINTS" nil "WM_HINTS" nil nil t) nil))
+         (flags (car wm-hints)))
+    (setcar wm-hints (logior flags #x00000100))
+    (x-change-window-property "WM_HINTS" wm-hints nil "WM_HINTS" 32 t)))
+
+(defun my-any-regex-in-string (regexes string)
+  (when string (--any-p (s-contains? it string) regexes)))
+
+(defface my-circe-highlight-notification-face '((t (:weight bold)))
+  "Face for circe notifications")
+
+(defun my-circe-message-option-highlight (nick user host command args)
+  (let* ((highlight-regexps '("webspid0r" "wubspider" "wasamasa" "wasa\\>"))
+         (irc-message (cadr args))
+         (highlight-match (my-any-regex-in-string highlight-regexps irc-message)))
+    (when irc-message
+      (when (not (equal nick circe-default-nick))
+        (when (and (not (equal major-mode 'circe-server-mode))
+                   (and (not (s-matches? "LAGMON" irc-message))
+                        (equal major-mode 'circe-query-mode))
+                   (or highlight-match
+                       (equal major-mode 'circe-query-mode)))
+          (my-x-urgency-hint))
+        (when highlight-match
+          '((text-properties . (face my-circe-highlight-notification-face message t))))))))
+
+(add-hook 'circe-message-option-functions 'my-circe-message-option-highlight)
+
+(setq circe-track-faces-priorities '(my-circe-highlight-notification-face
+                                     circe-my-message-face circe-server-face))
+
+(defun my-circe-disable-highlight-nick ()
+  (remove-hook 'lui-pre-output-hook 'circe-highlight-nick t))
+
+(add-hook 'circe-chat-mode-hook 'my-circe-disable-highlight-nick)
+#+END_SRC
+
+Highlight quoted text in a green color for fun and profit (or to be
+honest, to discern [[https://www.4chan.org/][4chan]] people from the rest).
+
+#+BEGIN_SRC emacs-lisp
+(defface my-circe-greentext-face '((t (:foreground "spring green")))
+  "Face for greentext detected in circe.")
+
+(defun my-circe-color-greentext ()
+  (when (memq major-mode '(circe-channel-mode circe-query-mode))
+    (let ((body-beg (text-property-any (point-min) (point-max)
+                                       'lui-format-argument 'body))
+          (greentext-regex "\\([^[:space:]]+?: \\)?\\(>[[:word:][:space:]]\\)"))
+      (when body-beg
+        (goto-char body-beg)
+        (when (looking-at greentext-regex)
+          (add-text-properties (match-beginning 2) (point-max)
+                               '(face my-circe-greentext-face)))))))
+
+(add-hook 'lui-pre-output-hook 'my-circe-color-greentext)
+#+END_SRC
+
+I dislike =custom=, but want persistent fools.  So, advice it is!
+
+#+BEGIN_SRC emacs-lisp
+(defvar my-circe-fool-file "~/.emacs.d/etc/fools"
+  "File to store persistent fools in.")
+
+(defun my-circe-serialize-fools (fools)
+  (with-temp-file my-circe-fool-file
+    (insert (prin1-to-string fools))))
+
+(defun my-circe-deserialize-fools ()
+  (when (file-exists-p my-circe-fool-file)
+    (with-temp-buffer
+      (insert-file-contents-literally my-circe-fool-file)
+      (read (buffer-substring-no-properties (point-min) (point-max))))))
+
+(defun my-circe-load-fools ()
+  (setq circe-fool-list (my-circe-deserialize-fools)))
+
+(defun my-circe-update-fools ()
+  (my-circe-serialize-fools
+   (-union (my-circe-deserialize-fools) circe-fool-list)))
+
+(defun my-circe-truncate-fools ()
+  (my-circe-serialize-fools circe-fool-list))
+
+(defadvice circe-command-FOOL (after persistent-fools activate)
+  (my-circe-update-fools))
+
+(defadvice circe-command-UNFOOL (after persistent-fools activate)
+  (my-circe-truncate-fools))
+
+(add-hook 'circe-channel-mode-hook 'my-circe-load-fools)
+#+END_SRC
+
+There is a pretty annoying interaction between ZNC's replay feature
+which makes the lagmon reconnect kick in if too much time is spent not
+replying to anything, here's a hack to deal with it by disabling it as
+long as it's going on.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-circe-display-PRIVMSG (nick user host command args)
+  (when (and (string= nick "***") (string= user "znc"))
+    (let ((message (cadr args)))
+      (cond
+       ((string= message "Buffer Playback...")
+        (circe-lagmon-mode -1))
+       ((string= message "Playback Complete.")
+        (circe-lagmon-mode)))))
+  (circe-display-PRIVMSG nick user host command args))
+
+(with-eval-after-load 'circe
+  (circe-set-display-handler "PRIVMSG" 'my-circe-display-PRIVMSG))
+#+END_SRC
+
+Let's test having fluid-width windows, now that both Circe and Emacs
+24.4 seem to be less wonky about it.  Adapted from [[https://github.com/jorgenschaefer/circe/wiki/Configuration#fluid-width-windows][the wiki]], extended
+to avoid the rather annoying behaviour of the cursor jumping into the
+fringe when reaching the full text width.
+
+#+BEGIN_SRC emacs-lisp
+(setq lui-time-stamp-position 'right-margin
+      lui-fill-type nil)
+
+(defun my-no-fill-lui-setup ()
+  (setq fringes-outside-margins t
+        right-margin-width 7
+        fill-column 80
+        wrap-prefix "    ")
+  (visual-line-mode)
+  (setf (cdr (assoc 'continuation fringe-indicator-alist)) nil)
+  (make-local-variable 'overflow-newline-into-fringe)
+  (setq overflow-newline-into-fringe nil))
+
+(add-hook 'circe-chat-mode-hook 'my-no-fill-lui-setup)
+#+END_SRC
+
+**** Entry point
+
+And finally, the function for entering IRC.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-irc ()
+  "Connect to all my IRC servers after enabling contrib modules."
+  (interactive)
+  (circe-lagmon-mode)
+  (enable-circe-color-nicks)
+  (enable-lui-autopaste)
+  (require 'circe-chanop)
+  (circe "Bitlbee")
+  (circe "ZNC/f0o")
+  (circe "ZNC/freenode"))
+
+(defun my-irc-debug ()
+  (interactive)
+  (circe "Freenode" :nick "not_wasamasa"))
+#+END_SRC
+
+*** =hl-todo=
+
+Minor mode for coloring =TODO=, =NOTE=, =FIXME= and many more keywords
+of that sort prevalent in comments and strings.
+
+#+BEGIN_SRC emacs-lisp
+(setq hl-todo-keyword-faces '(("TODO" . hl-todo)
+                              ("NOTE" . hl-todo)
+                              ("HACK" . hl-todo)
+                              ("FIXME" . hl-todo)
+                              ("KLUDGE" . hl-todo)))
+
+(with-eval-after-load 'hl-todo
+  (hl-todo-set-regexp))
+#+END_SRC
+
+*** =macrostep=
+
+Expand macros interactively.
+
+I'll go with the recommended keybinding for it.
+
+#+BEGIN_SRC emacs-lisp
+(define-key emacs-lisp-mode-map (kbd "C-x e") 'macrostep-expand)
+#+END_SRC
+
+*** =visual-fill-column=
+
+There used to be ~longlines-mode~ which did display a file
+soft-wrapped without breaking words and using the value of
+~fill-column~.  However it got deprecated for ~visual-line-mode~ which
+does the same except it doesn't take ~fill-column~ into account.  The
+=visual-fill-column= package fixes that, I want to enable its mode
+automatically when enabling ~visual-line-mode~.
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'visual-line-mode-hook 'visual-fill-column-mode)
+#+END_SRC
+
+*** =magit=
+
+The very best.  I'm currently on the =next= branch to get the latest
+bugfixes and features.
+
+For some reason they've started nagging me to opt-in for default
+behaviour to be used without confirmation.
+
+#+BEGIN_SRC emacs-lisp
+(setq magit-revert-buffers 'silent)
+(setq magit-push-always-verify nil)
+#+END_SRC
+
+*** Geiser
+
+The closest thing to [[https://github.com/slime/slime][SLIME]].  It supports three Scheme implementations
+currently, so I'm picking my prefered one.
+
+#+BEGIN_SRC emacs-lisp
+(setq geiser-default-implementation 'chicken)
+#+END_SRC
+
+** Keybinds
+
+We already have =F1= for help, so let's turn =C-h= and =M-h= more
+readline-like.
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "C-h") 'delete-backward-char)
+(global-set-key (kbd "M-h") 'backward-kill-word)
+#+END_SRC
+
+Deactivate all other uses of insert than =Shift-Insert=.
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "<insert>") nil)
+(global-set-key (kbd "<C-insert>") nil)
+#+END_SRC
+
+FWIW, yanking is what Emacs calls /pasting/ text.  Unlike Vim where it
+stands for /copying/ text.  Anyways, I want to rectify the curious
+default of making =S-insert= paste from the same place as =C-y=.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-yank-primary ()
+  (interactive)
+  (let ((primary (or (x-get-selection-value)
+                     (x-get-selection))))
+    (unless primary
+      (error "No selection is available"))
+    (push-mark (point))
+    (insert-for-yank primary)))
+
+(global-set-key (kbd "<S-insert>") 'my-yank-primary)
+#+END_SRC
+
+Install a keybind that saves all buffers with asking (use a prefix
+argument to inhibit the questions), then kills Emacs (including the
+daemon) on =M-<f4>=.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-quit-emacs (arg)
+  (interactive "P")
+  (save-some-buffers (when (consp arg) t) t)
+  (kill-emacs))
+
+(global-set-key (kbd "M-<f4>") 'my-quit-emacs)
+#+END_SRC
+
+Make =M-x= more useful, put its original functionality on =C-c M-x=
+instead.
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "M-x") 'helm-smex)
+(global-set-key (kbd "C-c M-x") 'execute-extended-command)
+#+END_SRC
+
+Helm stuff
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "C-x C-f") 'helm-find-files)
+(global-set-key (kbd "C-x b") 'helm-buffers-list)
+(global-set-key (kbd "<f10>") 'helm-resume)
+#+END_SRC
+
+=C-c C-+= and =C-c C--= are pretty useful, but only resize the current
+buffer.  Here's a hack using ~set-frame-font~ and altering the font
+size only:
+
+#+BEGIN_SRC emacs-lisp
+(defun my-alter-frame-font-size (fn)
+  (let* ((current-font-name (frame-parameter nil 'font))
+         (decomposed-font-name (x-decompose-font-name current-font-name))
+         (font-size (string-to-int (aref decomposed-font-name 5))))
+    (aset decomposed-font-name 5 (int-to-string (funcall fn font-size)))
+    (set-frame-font (x-compose-font-name decomposed-font-name))))
+
+(defun my-inc-frame-font-size ()
+  (interactive)
+  (my-alter-frame-font-size '1+))
+
+(defun my-dec-frame-font-size ()
+  (interactive)
+  (my-alter-frame-font-size '1-))
+
+(global-set-key (kbd "C-+") 'my-inc-frame-font-size)
+(global-set-key (kbd "C-=") 'my-inc-frame-font-size)
+(global-set-key (kbd "C--") 'my-dec-frame-font-size)
+#+END_SRC
+
+** Hooks
+
+First of all, let's define a helper function that does the boilerplate
+for us.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-add-function-to-hooks (function hooks)
+  (dolist (hook hooks)
+    (add-hook hook function)))
+#+END_SRC
+
+*** Basic setup
+
+I'll start with a list of hooks for everything that's not a special
+mode or in other words, related to programming and text editing.  This
+will inevitably contain modes that have not been properly derived,
+might be worth reporting those.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-non-special-modes-setup ()
+  (setq indicate-empty-lines t)
+  (setq indicate-buffer-boundaries '((top . left) (bottom . left)))
+  (setq show-trailing-whitespace t)
+  (hl-todo-mode)
+  (modify-syntax-entry ?_ "w")
+  (goto-address-mode)
+  (smartparens-mode)
+  (show-smartparens-mode)
+  (yas-minor-mode)
+  (form-feed-mode))
+
+(my-add-function-to-hooks
+  'my-non-special-modes-setup
+  '(text-mode-hook prog-mode-hook css-mode-hook diff-mode-hook))
+#+END_SRC
+
+Same deal with programming-related hooks and text-related hooks.
+
+#+BEGIN_SRC emacs-lisp
+(my-add-function-to-hooks
+  'auto-fill-mode
+  '(text-mode-hook css-mode-hook))
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp
+(defun my-prog-modes-setup ()
+  (make-local-variable 'comment-auto-fill-only-comments)
+  (setq comment-auto-fill-only-comments t)
+  (auto-fill-mode)
+  (column-enforce-mode))
+
+(my-add-function-to-hooks
+  'my-prog-modes-setup
+  '(prog-mode-hook))
+#+END_SRC
+
+*** Mode-specific setup
+
+To fine tune completion behavior, I'll prefer ~company-mode~ over
+~global-company-mode~.  I should add more hooks for REPLs, too.
+
+#+BEGIN_SRC emacs-lisp
+(my-add-function-to-hooks
+  'company-mode
+  '(prog-mode-hook css-mode-hook nxml-mode-hook sgml-mode-hook
+    css-mode-hook ielm-mode-hook))
+#+END_SRC
+
+Enable linting for a few select modes by default.  The rest is
+programming languages I don't happen to use, languages I don't have a
+linter installed for or that would be too annoying to always check.
+Like, the default =emacs-lisp= (and =emacs-lisp-checkdoc=, too) linter
+which always assumes I'm writing an Emacs package.
+
+#+BEGIN_SRC emacs-lisp
+(my-add-function-to-hooks
+ 'flycheck-mode
+ '(python-mode-hook ruby-mode-hook enh-ruby-mode-hook LaTeX-mode-hook))
+#+END_SRC
+
+Rainbow-colored delimiters still work best in Lisp modes.
+
+#+BEGIN_SRC emacs-lisp
+(my-add-function-to-hooks
+  'rainbow-delimiters-mode
+  '(emacs-lisp-mode-hook ielm-mode-hook scheme-mode-hook
+    inferior-scheme-mode-hook lisp-mode-hook lisp-interaction-mode-hook
+    clojure-mode-hook nrepl-interaction-mode-hook))
+#+END_SRC
+
+Colored color codes however only make sense for CSS, HTML and XML.
+
+#+BEGIN_SRC emacs-lisp
+(my-add-function-to-hooks
+  'rainbow-mode
+  '(css-mode-hook sgml-mode-hook nxml-mode-hook web-mode-hook))
+#+END_SRC
+
+=smartparens= ought to be enabled in the minibuffer, but only for =M-:=.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-smartparens-minibuffer-setup ()
+  (when (eq this-command 'eval-expression)
+    (smartparens-mode)
+    (show-smartparens-mode)))
+
+(add-hook 'minibuffer-setup-hook 'my-smartparens-minibuffer-setup)
+#+END_SRC
+
+** Load unpublished packages
+
+Emacs Lisp files can be easily turned into packages one can load and
+install via =package.el=.  While initialization is done, it only
+happens /after/ successful startup.
+
+My unpublished packages reside in =~/.emacs.d/unpublished= and need to
+be added to the ~load-path~.
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "~/.emacs.d/unpublished")
+#+END_SRC
+
+** Set up unpublished packages
+
+I have a bunch of stuff I'm working on.
+
+#+BEGIN_SRC emacs-lisp
+(require 'helm-smex)
+#+END_SRC
+
+** Post-Init
+
+While packages were prematurely initialized, the following is
+unconditionally run after init has finished.
+
+#+BEGIN_SRC emacs-lisp
+(defun my-after-init ()
+  (add-to-list 'load-path "~/code/circe")
+  (add-to-list 'load-path "~/code/shackle")
+  (add-to-list 'load-path "~/code/eyebrowse")
+  (add-to-list 'load-path "~/code/form-feed")
+  (add-to-list 'load-path "~/code/firestarter")
+  (sml/setup)
+  (require 'dash)
+  (recentf-mode)
+  (savehist-mode)
+  (require 'saveplace)
+  (winner-mode)
+  (shackle-mode)
+  (firestarter-mode)
+  (smex-initialize)
+  (helm-mode)
+  (electric-indent-mode -1)
+  (my-setup-hydra)
+  (evil-mode)
+  (my-disable-tramp-file-handlers)
+  (cl-lib-highlight-initialize)
+  (cl-lib-highlight-warn-cl-initialize)
+  (line-number-mode)
+  (column-number-mode))
+(add-hook 'after-init-hook 'my-after-init)
+#+END_SRC
+
+* Stuff to do
+
+- Learn Yasnippet and write snippets
+- Improve company-mode UI
+- Check backends and reconsider their uses
+- [[https://github.com/wasamasa/dotemacs/blob/master/init.el][Mix in Yasnippet]]
+- Update from company-jedi to anaconda-mode
+- Configure smartparens properly, contribute defaults
+- Fix show-smartparens on that configuration block
+- Figure out how to use [[https://bitbucket.org/lyro/evil/issues/497/regarding-initial-states][Evil initial states via major mode hooks]]
+- Get modes not working with prog- or text-mode-hook fixed
+- Make use of toc-org after fixing its bugs
+
+* Epilogue
+
+I consider this experiment successful.  I've managed to uncruftify my
+previous setup, have a highly readable init file and get
+recommendations and Github favourites from an reasonable amount of
+people.  It went better than expected because explaining my reasoning
+and hacks in a config file fits me better than doing the same for a
+program's code.
+
+Debugging has suffered a bit due to the indirection.  While =C-x C-e=
+works globally, I no longer have =C-M-x= and the prefix argument
+version for instrumenting, so I need to copy the piece of code over to
+a scratch buffer.  [[https://github.com/jschaf/esup][esup]] reports an artificially low time, unlike what
+=M-x emacs-init-time= does.

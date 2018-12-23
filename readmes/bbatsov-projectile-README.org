@@ -1,0 +1,162 @@
+[[http://www.gnu.org/licenses/gpl-3.0.txt][[[https://img.shields.io/badge/license-GPL_3-green.svg]]]]
+[[http://melpa.org/#/projectile][[[http://melpa.org/packages/projectile-badge.svg]]]]
+[[http://stable.melpa.org/#/projectile][[[http://stable.melpa.org/packages/projectile-badge.svg]]]]
+[[https://travis-ci.org/bbatsov/projectile][[[https://travis-ci.org/bbatsov/projectile.png?branch=master]]]]
+[[https://liberapay.com/bbatsov/donate][[[https://liberapay.com/assets/widgets/donate.svg]]]]
+[[https://www.patreon.com/bbatsov][[[https://img.shields.io/badge/patreon-donate-orange.svg]]]]
+
+** Synopsis
+   :PROPERTIES:
+   :CUSTOM_ID: synopsis
+   :END:
+
+[[https://gitter.im/bbatsov/projectile?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge][[[https://badges.gitter.im/Join%20Chat.svg]]]]
+
+*Projectile* is a project interaction library for Emacs. Its goal is
+to provide a nice set of features operating on a project level without
+introducing external dependencies (when feasible). For instance -
+finding project files has a portable implementation written in pure
+Emacs Lisp without the use of GNU =find= (but for performance sake an
+indexing mechanism backed by external commands exists as well).
+
+Projectile tries to be practical - portability is great, but if some
+external tools could speed up some task substantially and the tools
+are available, Projectile will leverage them.
+
+This library provides easy project management and navigation. The
+concept of a project is pretty basic - just a folder containing
+special file. Currently =git=, =mercurial=, =darcs= and =bazaar= repos
+are considered projects by default. So are =lein=, =maven=, =sbt=,
+=scons=, =rebar= and =bundler= projects. If you want to mark a folder
+manually as a project just create an empty =.projectile= file in it.
+Some of Projectile's features:
+
+- jump to a file in project
+- jump to files at point in project
+- jump to a directory in project
+- jump to a file in a directory
+- jump to a project buffer
+- jump to a test in project
+- toggle between files with same names but different extensions (e.g.
+  =.h= <-> =.c/.cpp=, =Gemfile= <-> =Gemfile.lock=)
+- toggle between code and its test (e.g. =main.service.js= <->
+  =main.service.spec.js=)
+- jump to recently visited files in the project
+- switch between projects you have worked on
+- kill all project buffers
+- replace in project
+- multi-occur in project buffers
+- grep in project
+- regenerate project etags or gtags (requires
+  [[https://github.com/leoliu/ggtags][ggtags]]).
+- visit project in dired
+- run make in a project with a single key chord
+- check for dirty repositories
+- toggle read-only mode for the entire project
+
+Here's a glimpse of Projectile in action:
+
+#+CAPTION: Projectile Screenshot
+[[file:doc/screenshots/projectile.png]]
+
+You can support my work on Projectile via
+[[https://www.paypal.me/bbatsov][PayPal]],
+[[https://salt.bountysource.com/teams/projectile][Salt]],
+[[https://www.patreon.com/bbatsov][Patreon]] and
+[[https://liberapay.com/bbatsov/donate][Liberapay]].
+
+[[https://liberapay.com/bbatsov/donate][[[https://liberapay.com/assets/widgets/donate.svg]]]]
+[[https://www.patreon.com/bbatsov][[[https://img.shields.io/badge/patreon-donate-orange.svg]]]]
+
+** Quickstart
+   :PROPERTIES:
+   :CUSTOM_ID: quickstart
+   :END:
+
+The instructions that follow are meant to get you from zero to a
+running Projectile setup in a minute. See the
+[[https://docs.projectile.mx][official manual]] for (way) more
+details.
+
+*** Installation
+    :PROPERTIES:
+    :CUSTOM_ID: installation
+    :END:
+
+=package.el= is the built-in package manager in Emacs.
+
+Projectile is available on the two major =package.el= community
+maintained repos - [[http://stable.melpa.org][MELPA Stable]] and
+[[http://melpa.org][MELPA]].
+
+You can install Projectile with the following command:
+
+M-x =package-install= [RET] =projectile= [RET]
+
+Alternatively, users of Debian 9 or later or Ubuntu 16.04 or later may
+simply =apt-get install elpa-projectile=.
+
+Finally add this to your Emacs config:
+
+#+BEGIN_EXAMPLE
+    (projectile-mode +1)
+    (define-key projectile-mode-map (kbd "s-p") 'projectile-command-map)
+    (define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map)
+#+END_EXAMPLE
+
+Those keymap prefixes are just a suggestion. Feel free to put there
+whatever works best for you.
+
+*** Basic Usage
+    :PROPERTIES:
+    :CUSTOM_ID: basic-usage
+    :END:
+
+Enable =projectile-mode=, open a file in one of your projects and type
+a command such as C-c p f.
+
+See the user manual for more details.
+
+** Caveats
+   :PROPERTIES:
+   :CUSTOM_ID: caveats
+   :END:
+
+- Some operations like search (grep) depend (presently) on external
+  utilities such as =find=.
+
+** Known issues
+   :PROPERTIES:
+   :CUSTOM_ID: known-issues
+   :END:
+
+Check out the project's
+[[https://github.com/bbatsov/projectile/issues?sort=created&direction=desc&state=open][issue
+list]] a list of unresolved issues. By the way - feel free to fix any
+of them and sent me a pull request. :-)
+
+** Contributors
+   :PROPERTIES:
+   :CUSTOM_ID: contributors
+   :END:
+
+Here's a [[https://github.com/bbatsov/projectile/contributors][list]]
+of all the people who have contributed to the development of
+Projectile.
+
+** Changelog
+   :PROPERTIES:
+   :CUSTOM_ID: changelog
+   :END:
+
+A fairly extensive changelog is available [[file:CHANGELOG.md][here]].
+
+** License
+   :PROPERTIES:
+   :CUSTOM_ID: license
+   :END:
+
+Copyright © 2011-2018 Bozhidar Batsov and
+[[https://github.com/bbatsov/projectile/contributors][contributors]].
+
+Distributed under the GNU General Public License, version 3
